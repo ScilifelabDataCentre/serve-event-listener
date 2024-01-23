@@ -15,4 +15,6 @@ RUN apk add --update --no-cache \
 
 RUN adduser -D $USER --home $HOME
 
-COPY /src/ $HOME/
+COPY /serve_event_listener/ $HOME/
+
+ENTRYPOINT [ "python3", "main.py" ]

@@ -58,6 +58,7 @@ def start_stream(k8s_watch, k8s_api, namespace, label_selector):
         k8s_api.list_namespaced_pod, namespace=namespace, label_selector=label_selector
     ):
         status_data = update_status_data(event, status_data)
+
         # TODO: send request
 
     return False

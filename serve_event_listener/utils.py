@@ -30,8 +30,8 @@ def setup_client():
             logger.debug("Attempting to load KUBECONFIG")
             config.load_kube_config(KUBECONFIG)
         else:
-            logger.debug("No KUBECONFIG provided - attemting to use default config")
-            config.load_incluster_config()
+            logger.warning("No KUBECONFIG provided - attemting to use default config")
+            config.incluster_config.load_incluster_config()
 
     except config.ConfigException as e:
         logging.error("An exception occurred while setting the cluster config.")

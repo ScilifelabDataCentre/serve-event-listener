@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 
 import requests
 from colorlog import ColoredFormatter
@@ -19,9 +20,15 @@ formatter = ColoredFormatter(
     },
 )
 
+DEBUG = os.environ.get("DEBUG", False)
 # Set up logging configuration with the ColoredFormatter
+if DEBUG:
+    level = logging.DEBUG
+else:
+    level = logging.INFO
+
 logging.basicConfig(
-    level=logging.DEBUG, format="%(message)s", handlers=[logging.StreamHandler()]
+    level=level, format="%(message)s", handlers=[logging.StreamHandler()]
 )
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
