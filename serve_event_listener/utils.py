@@ -77,7 +77,7 @@ def update_status_data(event: dict, status_data: dict) -> dict:
     creation_timestamp = pod.metadata.creation_timestamp
     deletion_timestamp = pod.metadata.deletion_timestamp
 
-    status_data = determine_status_update(
+    status_data = update_or_create_status(
         status_data, status, release, creation_timestamp, deletion_timestamp
     )
 
@@ -87,41 +87,41 @@ def update_status_data(event: dict, status_data: dict) -> dict:
     return status_data
 
 
-def determine_status_update(
-    status_data: dict,
+def update_or_create_status(
+    status_data: Dict[str, Any],
     status: str,
     release: str,
     creation_timestamp: datetime,
     deletion_timestamp: Union[datetime, None],
-) -> Dict[Any, Any]:
+) -> Dict[str, Any]:
+    """
+    Update the status data for a release.
+
+    Args:
+        status_data (Dict): The existing status data.
+        status (str): The new status.
+        release (str): The release identifier.
+        creation_timestamp (datetime): The creation timestamp.
+        deletion_timestamp (Union[datetime, None]): The deletion timestamp or None.
+
+    Returns:
+        Dict: Updated status data.
+    """
     if (
         release not in status_data
         or creation_timestamp >= status_data[release]["creation_timestamp"]
     ):
-        status_data = create_status_data_dict(
-            status_data, status, release, creation_timestamp, deletion_timestamp
-        )
+        status_data[release] = {
+            "creation_timestamp": creation_timestamp,
+            "deletion_timestamp": deletion_timestamp,
+            "status": "Deleted" if deletion_timestamp else status,
+        }
         update_status = status_data[release]["status"]
         logger.debug(
             f"Updating status data for release {release} with status {update_status}"
         )
     else:
         logger.debug("No update was made")
-    return status_data
-
-
-def create_status_data_dict(
-    status_data: dict,
-    status: str,
-    release: str,
-    creation_timestamp: datetime,
-    deletion_timestamp: Union[datetime, None],
-) -> Dict[Any, Any]:
-    status_data[release] = {
-        "creation_timestamp": creation_timestamp,
-        "deletion_timestamp": deletion_timestamp,
-        "status": "Deleted" if deletion_timestamp else status,
-    }
     return status_data
 
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, Tuple, Union
 
-from serve_event_listener.utils import determine_status_update
+from serve_event_listener.utils import update_or_create_status
 
 
 def pod_basic_startup(release: str) -> dict:
@@ -18,7 +18,7 @@ def pod_basic_startup(release: str) -> dict:
 
     status_data: Dict[Any, Any] = {}
     for status, ts in zip(statuses, creation_timestamps):
-        status_data = determine_status_update(
+        status_data = update_or_create_status(
             status_data, status, release, ts, deletion_timestamp=None
         )
 
@@ -53,7 +53,7 @@ def pod_basic_delete(release: str) -> dict:
     for status, creation_timestamp, deletion_timestamp in zip(
         statuses, creation_timestamps, deletion_timestamps
     ):
-        status_data = determine_status_update(
+        status_data = update_or_create_status(
             status_data, status, release, creation_timestamp, deletion_timestamp
         )
 
