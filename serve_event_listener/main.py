@@ -2,11 +2,31 @@ import argparse
 import logging
 
 import requests
+from colorlog import ColoredFormatter
 from init_stream import init
 from kubernetes import watch
 
 # Configure the logger
-logging.basicConfig(level=logging.INFO)
+formatter = ColoredFormatter(
+    "%(log_color)s%(asctime)s - %(levelname)s - %(module)s: %(message)s%(reset)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    log_colors={
+        "DEBUG": "blue",
+        "INFO": "green",
+        "WARNING": "yellow",
+        "ERROR": "red",
+        "CRITICAL": "red,bg_white",
+    },
+)
+
+# Set up logging configuration with the ColoredFormatter
+logging.basicConfig(
+    level=logging.DEBUG, format="%(message)s", handlers=[logging.StreamHandler()]
+)
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+logging.getLogger().handlers = [handler]
+
 logger = logging.getLogger(__name__)
 
 
@@ -14,13 +34,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Kubernetes Event Listener")
     parser.add_argument(
         "--namespace",
-        required=True,
         help="Kubernetes namespace to watch",
         default="default",
     )
     parser.add_argument(
         "--label-selector",
-        required=True,
         help="Label selector for filtering pods",
         default="type=app",
     )
@@ -29,14 +47,6 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-
-    # Configure logger to write to a file
-    log_file = "event_listener.log"
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.INFO)
-    file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
 
     logger.info(
         "Starting Kubernetes Event Listener with namespace: %s, label selector: %s",
