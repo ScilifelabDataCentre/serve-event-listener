@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import Any, Dict, Tuple
+from datetime import datetime
+from typing import Any, Dict, Tuple, Union
 
 from kubernetes import client, config
 from kubernetes.client.models import V1PodStatus
@@ -87,8 +88,12 @@ def update_status_data(event: dict, status_data: dict) -> dict:
 
 
 def determine_status_update(
-    status_data, status, release, creation_timestamp, deletion_timestamp
-):
+    status_data: dict,
+    status: str,
+    release: str,
+    creation_timestamp: datetime,
+    deletion_timestamp: Union[datetime, None],
+) -> Dict[Any, Any]:
     if (
         release not in status_data
         or creation_timestamp >= status_data[release]["creation_timestamp"]
@@ -106,8 +111,12 @@ def determine_status_update(
 
 
 def create_status_data_dict(
-    status_data, status, release, creation_timestamp, deletion_timestamp
-):
+    status_data: dict,
+    status: str,
+    release: str,
+    creation_timestamp: datetime,
+    deletion_timestamp: Union[datetime, None],
+) -> Dict[Any, Any]:
     status_data[release] = {
         "creation_timestamp": creation_timestamp,
         "deletion_timestamp": deletion_timestamp,
