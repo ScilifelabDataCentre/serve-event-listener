@@ -19,7 +19,10 @@ def setup_client():
     """
 
     try:
-        config.load_kube_config(KUBECONFIG)
+        if KUBECONFIG:
+            config.load_kube_config(KUBECONFIG)
+        else:
+            config.load_incluster_config()
     except config.ConfigException as e:
         raise config.ConfigException(
             "Could not set the cluster config properly."
@@ -100,7 +103,7 @@ def mapped_status(reason: str) -> str:
     return K8S_STATUS_MAP.get(reason, reason)
 
 
-def sync_all_statuses(namespace, label_selector):
+def sync_all_statuses(namespace: str, label_selector: str) -> None:
     """
     Syncs the status of all apps with a pod that is on the cluster
     """

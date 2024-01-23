@@ -1,11 +1,10 @@
 import requests
 from kubernetes import watch
-
 from utils import (get_status, setup_client, sync_all_statuses,
                    update_status_data)
 
 
-def init_event_listener(namespace, label_selector):
+def init(namespace, label_selector):
     """
     The event listener takes the latest event and checks if a corresponding appinstance
     should be updated. It uses the creation timestamp to always use the status of the youngest pod
