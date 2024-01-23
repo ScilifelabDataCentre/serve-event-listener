@@ -22,7 +22,6 @@ def init(namespace, label_selector, max_retries=10, retry_delay=2):
             k8s_api = setup_client()
             k8s_watch = watch.Watch()
 
-            logger.info("Initializing event stream")
             start_stream(k8s_watch, k8s_api, namespace, label_selector)
 
         except urllib3.exceptions.ProtocolError as e:
@@ -54,7 +53,7 @@ def start_stream(k8s_watch, k8s_api, namespace, label_selector):
     - dict: Updated status_data.
     """
     status_data = {}
-
+    logger.info("Initializing event stream")
     for event in k8s_watch.stream(
         k8s_api.list_namespaced_pod, namespace=namespace, label_selector=label_selector
     ):

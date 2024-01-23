@@ -164,16 +164,3 @@ def get_status(status_object: V1PodStatus) -> Tuple[str, str]:
 
 def mapped_status(reason: str) -> str:
     return K8S_STATUS_MAP.get(reason, reason)
-
-
-def sync_all_statuses(namespace: str, label_selector: str) -> None:
-    """
-    Syncs the status of all apps with a pod that is on the cluster
-    """
-    k8s_api = setup_client()
-    for pod in k8s_api.list_namespaced_pod(
-        namespace=namespace, label_selector=label_selector
-    ).items:
-        status = pod.status.phase
-        release = pod.metadata.labels["release"]
-        # TODO: send request to update

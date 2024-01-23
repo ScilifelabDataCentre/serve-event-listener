@@ -1,25 +1,60 @@
 from datetime import datetime
-from typing import Dict, Mapping, Union
+from typing import Any, Dict, Tuple, Union
 
-from serve_event_listener.utils import create_status_data_dict
-
-
-def pod_start_event_generator():
-    pass
+from serve_event_listener.utils import determine_status_update
 
 
-"""namespace = "default"
-    release = "r123f991"
+def pod_basic_startup(release: str) -> dict:
+    statuses = ["waiting", "waiting", "running"]
 
-    readiness = [False, False, True]
-    states = ["waiting", "waiting", "running"]
-    reasons = ["ContainerCreating", "ContainerCreating", None]
-    messages = [None, None, None]
-    creation_timestamps = [
+    timestamps = [
         "2024-01-23T10:26:51Z",
         "2024-01-23T10:26:51Z",
         "2024-01-23T10:26:51Z",
     ]
-    status_data = {}"""
+    creation_timestamps = [
+        datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ") for ts in timestamps
+    ]
 
-# status_data = create_status_data_dict(status_data, status, release, creation_timestamp, deletion_timestamp=None)
+    status_data: Dict[Any, Any] = {}
+    for status, ts in zip(statuses, creation_timestamps):
+        status_data = determine_status_update(
+            status_data, status, release, ts, deletion_timestamp=None
+        )
+
+    return status_data
+
+
+def pod_basic_delete(release: str) -> dict:
+    statuses = ["waiting", "waiting", "running"]
+
+    creation_timestamps_strings = [
+        "2024-01-23T10:26:51Z",
+        "2024-01-23T10:26:51Z",
+        "2024-01-23T10:26:51Z",
+    ]
+
+    deletion_timestamp_strings = [
+        None,
+        None,
+        "2024-01-23T10:26:52Z",
+    ]
+
+    creation_timestamps = [
+        datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+        for ts in creation_timestamps_strings
+    ]
+    deletion_timestamps = [
+        datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ") if ts else None
+        for ts in deletion_timestamp_strings
+    ]
+
+    status_data: Dict[Any, Any] = {}
+    for status, creation_timestamp, deletion_timestamp in zip(
+        statuses, creation_timestamps, deletion_timestamps
+    ):
+        status_data = determine_status_update(
+            status_data, status, release, creation_timestamp, deletion_timestamp
+        )
+
+    return status_data

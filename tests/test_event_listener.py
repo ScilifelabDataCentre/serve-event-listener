@@ -2,25 +2,25 @@ import datetime
 import unittest
 from unittest.mock import MagicMock
 
-from create_mock_data import pod_start_event_generator
+from tests.create_mock_data import pod_basic_delete, pod_basic_startup
 
 
 class TestPodProcessing(unittest.TestCase):
-    def test_initializing_pod(self):
-        status_data = {}
-        # for event in pod_start_event_generator():
-        #    print(event)
-        #    status_data = update_status_data(event, status_data)
-        #    print(status_data)
+    release = "some_release"
+
+    def test_pod_startup(self):
+        status_data = pod_basic_startup(self.release)
 
         expected_status = "running"
 
-        self.assertEqual(status_data.get("status"), expected_status)
+        self.assertEqual(status_data.get(self.release).get("status"), expected_status)
 
-    def test_scaling_pods(self):
-        pass
-        # Test scenario for scaling up and down pods in a replicaset
-        # Similar to the first test, you can create mock events for scaling pods
+    def test_pod_delete(self):
+        status_data = pod_basic_delete(self.release)
+
+        expected_status = "Deleted"
+
+        self.assertEqual(status_data.get(self.release).get("status"), expected_status)
 
     def test_pod_deletion(self):
         pass
