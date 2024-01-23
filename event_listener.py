@@ -1,6 +1,9 @@
-from utils import setup_client, get_status, sync_all_statuses, update_status_data
-from kubernetes import watch
 import requests
+from kubernetes import watch
+
+from utils import (get_status, setup_client, sync_all_statuses,
+                   update_status_data)
+
 
 def init_event_listener(namespace, label_selector):
     """
@@ -10,13 +13,13 @@ def init_event_listener(namespace, label_selector):
     """
     k8s_api = setup_client()
     k8s_watch = watch.Watch()
-    
+
     try:
         start_stream(k8s_watch, k8s_api, namespace, label_selector)
-            
+
     except Exception as exc:
         print("Event listener exception occured", exc)
-        
+
 
 def start_stream(k8s_watch, k8s_api, namespace, label_selector):
     """
@@ -33,8 +36,10 @@ def start_stream(k8s_watch, k8s_api, namespace, label_selector):
     """
     status_data = {}
 
-    for event in k8s_watch.stream(k8s_api.list_namespaced_pod, namespace=namespace, label_selector=label_selector):
+    for event in k8s_watch.stream(
+        k8s_api.list_namespaced_pod, namespace=namespace, label_selector=label_selector
+    ):
         status_data = update_status_data(event, status_data)
         # TODO: send request
-        
+
     return False
