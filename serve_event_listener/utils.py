@@ -1,8 +1,9 @@
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Tuple, Union
 
+import requests
 from kubernetes import client, config
 from kubernetes.client.models import V1PodStatus
 
@@ -56,6 +57,7 @@ def update_status_data(event: dict, status_data: dict) -> dict:
 
     Returns:
     - status_data (dict): Updated dictionary containing status info.
+    - release (str): The release of the updated status
     """
     logger.debug("Event triggered update_status_data")
 
@@ -115,10 +117,11 @@ def update_or_create_status(
             "creation_timestamp": creation_timestamp,
             "deletion_timestamp": deletion_timestamp,
             "status": "Deleted" if deletion_timestamp else status,
+            "event-ts": get_timestamp_as_str(),
+            "sent": False,
         }
-        update_status = status_data[release]["status"]
         logger.debug(
-            f"Updating status data for release {release} with status {update_status}"
+            f"UPDATING STATUS DATA FOR {release} WITH STATUS {status_data[release]['status']}"
         )
     else:
         logger.debug("No update was made")
@@ -164,3 +167,59 @@ def get_status(status_object: V1PodStatus) -> Tuple[str, str]:
 
 def mapped_status(reason: str) -> str:
     return K8S_STATUS_MAP.get(reason, reason)
+
+
+def get_url() -> str:
+    return ""
+
+
+def convert_to_post_data(status_data: dict) -> dict:
+    """
+    The Serve API app-statuses expects a json on this form:
+    {
+        “token“: <token>,
+        “new-status“: <new status>,
+        “event-msg“: {“pod-msg“: <msg>, “container-msg“: <msg>},
+        “event-ts“: <event timestamp>
+    }
+
+    Parameters:
+    - status_data (dict): status_data dict from stream.
+
+    Returns:
+    - str: post data on the form explained above
+    """
+    token = "placeholder"
+
+    post_data = {
+        "token": token,
+        "new-status": status_data["status"],
+        "event-msg": {
+            "pod-msg": status_data["pod-msg"],
+            "container-msg": status_data["container-msg"],
+            "event-ts": status_data["event-ts"],
+        },
+    }
+    logger.debug("Converting to POST data")
+    return post_data
+
+
+def post(url: str, data: dict) -> int:
+    try:
+        token = "placeholder"
+        headers = {"Authorization": f"Token {token}"}
+
+        response = requests.post(url, data=data, headers=headers, verify=False)
+
+        logger.debug(f"RESPONSE STATUS CODE: {response.status_code}")
+        logger.debug(f"RESPONSE TEXT: {response.text}")
+
+    except requests.exceptions.RequestException:
+        logger.error("Service did not respond.")
+
+    return response.status_code
+
+
+def get_timestamp_as_str() -> str:
+    current_utc_time = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return str(current_utc_time)
