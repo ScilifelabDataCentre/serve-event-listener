@@ -1,6 +1,6 @@
-# Serve Event Listner
+# Serve Event Listener
 
-This repo contains the code for the event listerner service. This service listens to changes in kubernetes, and updates the correponding `AppInstance` and `AppStatus` objects in Serve. 
+This repo contains the code for the event listerner service. This service listens to changes in kubernetes, and updates the correponding `AppInstance` and `AppStatus` objects in Serve.
 
 ## How to run on host machine
 The service need a cluster config of some kind. This should be set as a `KUBECONFIG` env variable.

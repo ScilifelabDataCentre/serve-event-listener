@@ -70,7 +70,7 @@ def update_status_data(event: dict, status_data: dict) -> dict:
     if not status_object:
         return {}
 
-    status, container_message = get_status(status_object)
+    status, pod_message, container_message = get_status(status_object)
     release = pod.metadata.labels.get("release")
 
     logger.debug(f"Event triggered from release {release}")
@@ -83,7 +83,7 @@ def update_status_data(event: dict, status_data: dict) -> dict:
         status_data, status, release, creation_timestamp, deletion_timestamp
     )
 
-    status_data[release]["pod-msg"] = status_object.message
+    status_data[release]["pod-msg"] = pod_message
     status_data[release]["container-msg"] = container_message
 
     return status_data
@@ -128,7 +128,7 @@ def update_or_create_status(
     return status_data
 
 
-def get_status(status_object: V1PodStatus) -> Tuple[str, str]:
+def get_status(status_object: V1PodStatus) -> Tuple[str, str, str]:
     """
     Get the status of a Kubernetes pod.
 
@@ -138,8 +138,10 @@ def get_status(status_object: V1PodStatus) -> Tuple[str, str]:
     Returns:
     - str: The status of the pod.
     """
+    empty_message = "empty message"
+    pod_message = status_object.message if status_object.message else empty_message
+
     container_statuses = status_object.container_statuses
-    empty_message = "Empty Message"
 
     if container_statuses is not None:
         for container_status in container_statuses:
@@ -147,22 +149,22 @@ def get_status(status_object: V1PodStatus) -> Tuple[str, str]:
 
             terminated = state.terminated
             if terminated:
-                return mapped_status(terminated.reason), terminated.message
+                return mapped_status(terminated.reason), terminated.message, pod_message
 
             waiting = state.waiting
 
             if waiting:
-                return mapped_status(waiting.reason), waiting.message
+                return mapped_status(waiting.reason), waiting.message, pod_message
 
         else:
             running = state.running
             ready = container_status.ready
             if running and ready:
-                return "Running", empty_message
+                return "Running", empty_message, pod_message
             else:
-                return "Pending", empty_message
+                return "Pending", empty_message, pod_message
 
-    return status_object.phase, status_object.message
+    return status_object.phase, empty_message, pod_message
 
 
 def mapped_status(reason: str) -> str:
@@ -173,7 +175,7 @@ def get_url() -> str:
     return ""
 
 
-def convert_to_post_data(status_data: dict) -> dict:
+def convert_to_post_data(status_data: dict, release: str) -> dict:
     """
     The Serve API app-statuses expects a json on this form:
     {
@@ -190,34 +192,36 @@ def convert_to_post_data(status_data: dict) -> dict:
     - str: post data on the form explained above
     """
     token = "placeholder"
+    data = status_data[release]
 
     post_data = {
         "token": token,
-        "new-status": status_data["status"],
+        "release": release,
+        "new-status": data["status"],
         "event-msg": {
-            "pod-msg": status_data["pod-msg"],
-            "container-msg": status_data["container-msg"],
-            "event-ts": status_data["event-ts"],
+            "pod-msg": data["pod-msg"],
+            "container-msg": data["container-msg"],
+            "event-ts": data["event-ts"],
         },
     }
     logger.debug("Converting to POST data")
     return post_data
 
 
-def post(url: str, data: dict) -> int:
+def post(url: str, token: str, data: dict) -> int:
     try:
-        token = "placeholder"
         headers = {"Authorization": f"Token {token}"}
 
         response = requests.post(url, data=data, headers=headers, verify=False)
-
-        logger.debug(f"RESPONSE STATUS CODE: {response.status_code}")
+        status_code = response.status_code
+        logger.debug(f"RESPONSE STATUS CODE: {status_code}")
         logger.debug(f"RESPONSE TEXT: {response.text}")
 
     except requests.exceptions.RequestException:
         logger.error("Service did not respond.")
+        status_code = 500
 
-    return response.status_code
+    return status_code
 
 
 def get_timestamp_as_str() -> str:
