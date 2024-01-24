@@ -10,7 +10,7 @@ jobs:
       matrix:
         include:
           - dockerfile: ./Dockerfile
-            image: ghcr.io/${{ github.repository }}/serve-studio
+            image: ghcr.io/${{ github.repository }}/event-listener
 
     permissions:
       packages: write
@@ -28,7 +28,7 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=raw,value={{date 'YYYYMMDD'}},prefix=${{ github.ref_name }}-
+            type=raw,value={{date 'YYYYMMDD'}}
 
       - name: Set the build date project toml file
         uses: sandstromviktor/toml-editor@2.0.0
@@ -51,14 +51,14 @@ jobs:
           key: "tool.serve.imagetag"
           value: ${{ steps.meta.outputs.version }}
 
-      - name: Log in to ghcr.io
+      - name: Log in
         uses: docker/login-action@v1
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: docker build serve
+      - name: Build
         uses: docker/build-push-action@v2
         with:
           context: .
