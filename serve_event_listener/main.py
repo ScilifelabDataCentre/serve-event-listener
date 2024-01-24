@@ -49,6 +49,21 @@ def parse_args():
         help="Label selector for filtering pods",
         default="type=app",
     )
+    parser.add_argument(
+        "--username",
+        help="Username to connect to API",
+        required=True,
+    )
+    parser.add_argument(
+        "--password",
+        help="Username to connect to API",
+        required=True,
+    )
+    parser.add_argument(
+        "--base-url",
+        help="URL to connect to - No trailing /",
+        required=True,
+    )
     return parser.parse_args()
 
 
@@ -56,9 +71,16 @@ if __name__ == "__main__":
     args = parse_args()
 
     logger.info(
-        "Starting Kubernetes Event Listener with namespace: %s, label selector: %s",
-        args.namespace,
-        args.label_selector,
+        f"""Starting Kubernetes Event Listener"
+                Namespace: {args.namespace}
+                Label Selector: {args.label_selector}
+                URL: {args.base_url}"""
     )
 
-    init(args.namespace, args.label_selector)
+    init(
+        namespace=args.namespace,
+        label_selector=args.label_selector,
+        username=args.username,
+        password=args.password,
+        url=args.base_url,
+    )

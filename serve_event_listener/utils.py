@@ -208,20 +208,43 @@ def convert_to_post_data(status_data: dict, release: str) -> dict:
     return post_data
 
 
-def post(url: str, token: str, data: dict) -> int:
+def post(
+    url: str,
+    data: dict,
+    token: str,
+) -> int:
     try:
         headers = {"Authorization": f"Token {token}"}
 
         response = requests.post(url, data=data, headers=headers, verify=False)
         status_code = response.status_code
         logger.debug(f"RESPONSE STATUS CODE: {status_code}")
-        logger.debug(f"RESPONSE TEXT: {response.text}")
 
     except requests.exceptions.RequestException:
         logger.error("Service did not respond.")
         status_code = 500
 
     return status_code
+
+
+def get_token(url: str, data: dict) -> str:
+    token = ""
+    try:
+        response = requests.post(url, data=data, verify=False).json()
+        token = response["token"]
+        logger.info(f"FETCHING TOKEN: {token}")
+
+    except KeyError as e:
+        message = "No token was fetched - Are the credentials correct?"
+        logger.error(message)
+        raise KeyError(message) from e
+
+    except requests.exceptions.RequestException as e:
+        message = "Service did not respond."
+        logger.error(message)
+        raise requests.exceptions.RequestException(message) from e
+
+    return token
 
 
 def get_timestamp_as_str() -> str:
