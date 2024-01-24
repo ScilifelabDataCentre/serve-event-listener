@@ -208,14 +208,20 @@ def convert_to_post_data(status_data: dict, release: str) -> dict:
     return post_data
 
 
-def post(
-    url: str,
-    data: dict,
-    token: str,
-) -> int:
+def post(url: str, data: dict, token: str) -> int:
+    """
+    Send a POST request to the specified URL with the provided data and token.
+
+    Args:
+        url (str): The URL to send the POST request to.
+        data (dict): The data to be included in the POST request.
+        token (str): Authorization token for the request.
+
+    Returns:
+        int: The HTTP status code of the response.
+    """
     try:
         headers = {"Authorization": f"Token {token}"}
-
         response = requests.post(url, data=data, headers=headers, verify=False)
         status_code = response.status_code
         logger.debug(f"RESPONSE STATUS CODE: {status_code}")
@@ -228,7 +234,19 @@ def post(
 
 
 def get_token(url: str, data: dict) -> str:
-    token = ""
+    """
+    Retrieve an authentication token by sending a POST request with the provided data.
+
+    Args:
+        url (str): The URL to send the POST request to.
+        data (dict): The data to be included in the POST request.
+
+    Returns:
+        str: The authentication token obtained from the response.
+    Raises:
+        KeyError: If the response does not contain a valid token.
+        requests.exceptions.RequestException: If the service does not respond.
+    """
     try:
         response = requests.post(url, data=data, verify=False).json()
         token = response["token"]
@@ -248,5 +266,11 @@ def get_token(url: str, data: dict) -> str:
 
 
 def get_timestamp_as_str() -> str:
+    """
+    Get the current UTC time as a formatted string.
+
+    Returns:
+        str: The current UTC time in ISO format with milliseconds.
+    """
     current_utc_time = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
     return str(current_utc_time)

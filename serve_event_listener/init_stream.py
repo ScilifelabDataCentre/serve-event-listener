@@ -24,7 +24,7 @@ def init(**kwargs):
     namespace = kwargs.get("namespace", "default")
     label_selector = kwargs.get("label_selector", "type=app")
 
-    base_url = kwargs.get("base-url")
+    base_url = kwargs.get("base_url")
     username = kwargs.get("username")
     password = kwargs.get("password")
 

@@ -82,5 +82,5 @@ if __name__ == "__main__":
         label_selector=args.label_selector,
         username=args.username,
         password=args.password,
-        url=args.base_url,
+        base_url=args.base_url,
     )
