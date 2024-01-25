@@ -14,10 +14,14 @@ from kubernetes.client.models import V1PodStatus
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = os.environ.get("base_url", None)
-USERNAME = os.environ.get("username", None)
-PASSWORD = os.environ.get("password", None)
+BASE_URL = os.environ.get("BASE_URL", None)
+USERNAME = os.environ.get("USERNAME", None)
+PASSWORD = os.environ.get("PASSWORD", None)
 KUBECONFIG = os.environ.get("KUBECONFIG", None)
+
+BASE_URL = "http://studio.127.0.0.1.nip.io:8080"
+USERNAME = "x@x.se"
+PASSWORD = "x"
 
 TOKEN_API_ENDPOINT = BASE_URL + "/api/token-auth/"
 APP_STATUS_API_ENDPOINT = BASE_URL + "/apps/"
@@ -34,18 +38,34 @@ K8S_STATUS_MAP = {
 
 class EventListener:
     
-    
     def __init__(self):
         logger.info("Creating EventListener object")
-        self.status_data = StatusData()
+        self._status_data = StatusData()
+        #headers = {"Authorization": f"Token {self.token}"}
+    
+    @property
+    def status_data(self):
+        return self._status_data.status_data
+    
+    @property
+    def status_data_object(self):
+        return self._status_data
     
     def listen():
         pass 
     
     def setup(self, **kwargs):
-        self.setup_client()
-        self.fetch_token()
+        if self.check_status():
+            self.setup_client()
+            self.fetch_token()
         pass
+    
+    def check_status(self):
+        response = self.get(url=BASE_URL+"/openapi/v1/are-you-there")
+        if response.status_code == 200:
+            return True
+        else:
+            return False
     
     def setup_client(self):
         """
@@ -87,46 +107,61 @@ class EventListener:
         """
         data = {"username": USERNAME, "password": PASSWORD}
         try:
-            response = requests.post(TOKEN_API_ENDPOINT, data=data, verify=False).json()
-            token = response["token"]
-            logger.info(f"FETCHING TOKEN: {token}")
+            response = self.post(url=TOKEN_API_ENDPOINT, data=data)
+            response_json = response.json()
+            token = response_json["token"]
+            logger.debug(f"FETCHING TOKEN: {token}")
 
         except KeyError as e:
             message = "No token was fetched - Are the credentials correct?"
             logger.error(message)
             raise KeyError(message) from e
 
-        except requests.exceptions.RequestException as e:
-            message = "Service did not respond."
-            logger.error(message)
-            raise requests.exceptions.RequestException(message) from e
-
         self.token = token
         
-    def post(self, data: dict) -> int:
+    def post(self, url:str, data: dict, headers: Union[None, dict] = None) -> int:
         """
         Send a POST request to the specified URL with the provided data and token.
 
         Args:
             url (str): The URL to send the POST request to.
             data (dict): The data to be included in the POST request.
-            token (str): Authorization token for the request.
+            header (None or dict): header for the request.
 
         Returns:
             int: The HTTP status code of the response.
         """
         try:
-            headers = {"Authorization": f"Token {self.token}"}
-            response = requests.post(APP_STATUS_API_ENDPOINT, data=data, headers=headers, verify=False)
-            status_code = response.status_code
-            logger.debug(f"RESPONSE STATUS CODE: {status_code}")
+            response = requests.post(url=url, data=data, headers=headers, verify=False)
+            logger.info(f"POST returned - Status code: {response.status_code}")
 
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
             logger.error("Service did not respond.")
-            status_code = 500
+            response = None
 
-        return status_code
+        return response
         
+    def get(self, url:str, headers: Union[None, dict] = None) -> int:
+        """
+        Send a POST request to the specified URL with the provided data and token.
+
+        Args:
+            url (str): The URL to send the POST request to.
+            data (dict): The data to be included in the POST request.
+            header (None or dict): header for the request.
+
+        Returns:
+            int: The HTTP status code of the response.
+        """
+        try:
+            response = requests.get(url=url, headers=headers, verify=False)
+            logger.info(f"GET returned status code: {response.status_code}")
+
+        except requests.exceptions.RequestException as e:
+            logger.error("Service did not respond.")
+            response = None
+
+        return response
 
 class StatusData:
     
@@ -260,3 +295,6 @@ class StatusData:
         """
         current_utc_time = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
         return str(current_utc_time)
+    
+
+event_listener = EventListener()
