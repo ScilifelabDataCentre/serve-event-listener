@@ -3,7 +3,7 @@ import time
 
 import urllib3
 from kubernetes import watch
-from utils import (convert_to_post_data, get_token, get_url, post,
+from serve_event_listener._utils import (convert_to_post_data, get_token, get_url, post,
                    setup_client, update_status_data)
 
 logger = logging.getLogger(__name__)
@@ -89,3 +89,63 @@ def start_stream(k8s_watch, k8s_api, namespace, label_selector, url, token):
                 status_data[release]["sent"] = True
 
     return False
+
+
+
+import queue
+import requests
+import threading
+import time
+
+class EventProcessor:
+    def __init__(self):
+        self.request_queue = queue.Queue()
+        self.stop_event = threading.Event()
+
+    def process_event(self, event_data):
+        # Simulate processing event data and sending a request
+        time.sleep(2)  # Simulating delay in processing
+        response = requests.post("https://example.com/api/update", data=event_data)
+        print(f"Processed event data: {event_data}, Response: {response.text}")
+
+    def add_to_queue(self, event_data):
+        self.request_queue.put(event_data)
+
+    def process_queue(self):
+        while not self.stop_event.is_set():
+            try:
+                event_data = self.request_queue.get(timeout=1)  # Wait for 1 second
+                self.process_event(event_data)
+                self.request_queue.task_done()
+            except queue.Empty:
+                pass  # Continue looping if the queue is empty
+
+    def stop_processing(self):
+        self.stop_event.set()
+
+# Example usage
+
+event_processor = EventProcessor()
+
+# Start a thread to process the queue
+processing_thread = threading.Thread(target=event_processor.process_queue)
+processing_thread.start()
+
+try:
+    # Simulate events being added to the queue in the main program stream loop
+    for event_number in range(5):
+        event_data = {
+            "temperature": event_number + 20,
+            "pressure": event_number + 1000,
+            "time": time.time()
+        }
+        event_processor.add_to_queue(event_data)
+        time.sleep(1)  # Simulate waiting for the next event
+
+    # Wait for all events to be processed
+    event_processor.request_queue.join()
+
+finally:
+    # Stop the processing thread when done
+    event_processor.stop_processing()
+    processing_thread.join()
