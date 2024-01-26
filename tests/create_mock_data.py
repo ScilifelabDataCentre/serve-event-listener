@@ -1,10 +1,7 @@
 from datetime import datetime
-from typing import Any, Dict, Tuple, Union
-
-from serve_event_listener.utils import update_or_create_status
 
 
-def pod_basic_startup(release: str) -> dict:
+def pod_basic_startup(release):
     statuses = ["waiting", "waiting", "running"]
 
     timestamps = [
@@ -16,16 +13,11 @@ def pod_basic_startup(release: str) -> dict:
         datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ") for ts in timestamps
     ]
 
-    status_data: Dict[Any, Any] = {}
-    for status, ts in zip(statuses, creation_timestamps):
-        status_data = update_or_create_status(
-            status_data, status, release, ts, deletion_timestamp=None
-        )
-
-    return status_data
+    # TODO: finish this
+    pass
 
 
-def pod_basic_delete(release: str) -> dict:
+def pod_basic_delete(release):
     statuses = ["waiting", "waiting", "running"]
 
     creation_timestamps_strings = [
@@ -49,12 +41,5 @@ def pod_basic_delete(release: str) -> dict:
         for ts in deletion_timestamp_strings
     ]
 
-    status_data: Dict[Any, Any] = {}
-    for status, creation_timestamp, deletion_timestamp in zip(
-        statuses, creation_timestamps, deletion_timestamps
-    ):
-        status_data = update_or_create_status(
-            status_data, status, release, creation_timestamp, deletion_timestamp
-        )
-
-    return status_data
+    # TODO: finish this
+    pass
