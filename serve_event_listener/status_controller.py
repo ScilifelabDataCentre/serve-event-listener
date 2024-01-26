@@ -20,9 +20,6 @@ BASE_URL = os.environ.get("BASE_URL", "http://studio.192.168.0.130.nip.io:8080")
 TOKEN_API_ENDPOINT = os.environ.get(
     "TOKEN_API_ENDPOINT", BASE_URL + "/api/v1/token-auth/"
 )
-APP_STATUS_API_ENDPOINT = os.environ.get(
-    "APP_STATUS_API_ENDPOINT", BASE_URL + "/api/v1/app-status/"
-)
 
 
 class EventListener:
