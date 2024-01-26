@@ -3,7 +3,7 @@ import logging
 import os
 
 from colorlog import ColoredFormatter
-from status_controller import EventListener
+from event_listener import EventListener
 
 # Configure the logger
 formatter = ColoredFormatter(
