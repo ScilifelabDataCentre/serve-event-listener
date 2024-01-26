@@ -2,10 +2,8 @@ import argparse
 import logging
 import os
 
-import requests
+from app_status_controller import EventListener
 from colorlog import ColoredFormatter
-from init_stream import init
-from kubernetes import watch
 
 # Configure the logger
 formatter = ColoredFormatter(
@@ -49,21 +47,6 @@ def parse_args():
         help="Label selector for filtering pods",
         default="type=app",
     )
-    parser.add_argument(
-        "--username",
-        help="Username to connect to API",
-        required=True,
-    )
-    parser.add_argument(
-        "--password",
-        help="Username to connect to API",
-        required=True,
-    )
-    parser.add_argument(
-        "--base-url",
-        help="URL to connect to - No trailing /",
-        required=True,
-    )
     return parser.parse_args()
 
 
@@ -71,16 +54,11 @@ if __name__ == "__main__":
     args = parse_args()
 
     logger.info(
-        f"""Starting Kubernetes Event Listener"
-                Namespace: {args.namespace}
-                Label Selector: {args.label_selector}
-                URL: {args.base_url}"""
+        "\n\n\t{}\n\t  Starting Kubernetes Event Listener \n\t  Namespace: {}\n\t  Label Selector: {}\n\t{}\n".format(
+            "#" * 40, args.namespace, args.label_selector, "#" * 40
+        )
     )
 
-    init(
-        namespace=args.namespace,
-        label_selector=args.label_selector,
-        username=args.username,
-        password=args.password,
-        base_url=args.base_url,
-    )
+    event_listener = EventListener(args.namespace, args.label_selector)
+    event_listener.setup()
+    event_listener.listen()
