@@ -1,5 +1,5 @@
-from datetime import datetime
-
+from datetime import datetime, timezone
+from kubernetes.client import models
 
 def pod_basic_startup(release):
     statuses = ["waiting", "waiting", "running"]
@@ -43,3 +43,4 @@ def pod_basic_delete(release):
 
     # TODO: finish this
     pass
+
