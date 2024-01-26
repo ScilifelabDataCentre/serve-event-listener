@@ -2,7 +2,7 @@ import logging
 import os
 import threading
 import time
-from typing import Union
+from typing import Any, Optional, Union
 
 import requests
 import urllib3
@@ -26,22 +26,52 @@ APP_STATUS_API_ENDPOINT = os.environ.get(
 
 
 class EventListener:
-    def __init__(self, namespace="default", label_selector="type=app"):
+    """
+    EventListener class for handling Kubernetes events.
+    """
+
+    def __init__(
+        self, namespace: str = "default", label_selector: str = "type=app"
+    ) -> None:
+        """
+        Initializes the EventListener object.
+
+        Parameters:
+        - namespace (str): The Kubernetes namespace.
+        - label_selector (str): The label selector for filtering events.
+        """
         logger.info("Creating EventListener object")
         self.namespace = namespace
         self.label_selector = label_selector
-
         self.setup_complete = False
 
     @property
-    def status_data_dict(self):
+    def status_data_dict(self) -> dict:
+        """
+        Property to get the status data dictionary.
+
+        Returns:
+        - dict: The status data dictionary.
+        """
         return self._status_data.status_data
 
     @property
-    def status_data(self):
+    def status_data(self) -> Any:
+        """
+        Property to get the status data object.
+
+        Returns:
+        - Any: The status data object.
+        """
         return self._status_data
 
-    def setup(self, **kwargs):
+    def setup(self, **kwargs: Optional[Any]) -> None:
+        """
+        Sets up the EventListener object.
+
+        Parameters:
+        - **kwargs: Additional setup parameters.
+        """
         logger.info(
             "\n\n\t{}\n\t   Running Setup Process \n\t{}\n".format("#" * 30, "#" * 30)
         )
@@ -52,20 +82,26 @@ class EventListener:
             self._status_data = StatusData()
             self._status_queue = StatusQueue(self.post, self.token)
             self.setup_complete = True
-        except:
-            # TODO: Add exceptions here
+        except Exception:
+            # TODO: Add specific exceptions here
             logger.error("Setup failed")
 
-    def listen(self, **kwargs):
+    def listen(self) -> None:
+        """
+        Initializes the event stream and starts listening for events.
+
+        Parameters:
+        - **kwargs: Additional parameters for listening.
+        """
         logger.info(
             "\n\n\t{}\n\t  Initializing event stream\n\t{}\n".format("#" * 30, "#" * 30)
         )
+
+        max_retries = 10
+        retry_delay = 2
+
         if self.setup_complete:
-            max_retries = kwargs.get("max_retries", 10)
-            retry_delay = kwargs.get("retry_delay", 2)
-
-            # Start queue in separate thread
-
+            # Start queue in a separate thread
             status_queue_thread = threading.Thread(target=self._status_queue.process)
             status_queue_thread.start()
 
@@ -104,25 +140,31 @@ class EventListener:
         else:
             logger.warning("Setup not completed - run .setup() first")
 
-    def check_status(self):
+    def check_status(self) -> bool:
+        """
+        Checks the status of the EventListener.
+
+        Returns:
+        - bool: True if the status is okay, False otherwise.
+        """
         response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
         if response.status_code == 200:
             return True
         else:
             return False
 
-    def setup_client(self):
+    def setup_client(self) -> None:
         """
-        Sets up the kubernetes python client
+        Sets up the Kubernetes Python client.
         """
-        logger.info("Setting up kubernetes client")
+        logger.info("Setting up Kubernetes client")
         try:
             if KUBECONFIG:
                 logger.debug("Attempting to load KUBECONFIG")
                 config.load_kube_config(KUBECONFIG)
             else:
                 logger.warning(
-                    "No KUBECONFIG provided - attemting to use default config"
+                    "No KUBECONFIG provided - attempting to use default config"
                 )
                 config.incluster_config.load_incluster_config()
 
