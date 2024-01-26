@@ -2,8 +2,8 @@ import argparse
 import logging
 import os
 
-from app_status_controller import EventListener
 from colorlog import ColoredFormatter
+from status_controller import EventListener
 
 # Configure the logger
 formatter = ColoredFormatter(
