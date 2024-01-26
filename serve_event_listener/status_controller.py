@@ -115,7 +115,7 @@ class EventListener:
 
                         # Extract the data that should be sent to API
                         data = self.status_data.get_post_data()
-                        print(data)
+                        
                         # Add to queue. Queue handles post and return codes
                         self._status_queue.add(data)
 
