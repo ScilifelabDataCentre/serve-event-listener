@@ -59,6 +59,34 @@ class TestPodProcessing(unittest.TestCase):
             self.status_data.status_data[release].get("status"), "Image Error"
         )
 
+    def test_replica_scenario(self):
+        """
+        This scenario creates a pod, then creates a new pod.
+        After the second pod is created, the first one is deleted.
+        This is similar to how replicasets work"""
+
+        release = "r1234567"
+
+        self.pod.create(release)
+        self.status_data.update({"object": self.pod})
+
+        self.new_pod = Pod()
+        self.new_pod.create(release)
+        self.status_data.update({"object": self.new_pod})
+
+        self.pod.delete()
+        self.status_data.update({"object": self.pod})
+
+        self.new_pod.running()
+        self.status_data.update({"object": self.new_pod})
+
+        self.assertEqual(self.status_data.status_data[release].get("status"), "Running")
+
+        self.new_pod.delete()
+        self.status_data.update({"object": self.new_pod})
+
+        self.assertEqual(self.status_data.status_data[release].get("status"), "Deleted")
+
 
 if __name__ == "__main__":
     unittest.main()
