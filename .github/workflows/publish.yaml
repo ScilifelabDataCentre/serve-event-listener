@@ -21,7 +21,8 @@ on:
         required: false
         type: boolean
 jobs:
-  test:
+  tests:
+    name: Run unit-tests
     runs-on: ubuntu-latest
 
     strategy:
@@ -46,6 +47,8 @@ jobs:
         run: python -m unittest discover -s tests
 
   publish:
+    name: Publish to ghcr.io
+    needs: tests
     runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
