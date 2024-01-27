@@ -16,6 +16,5 @@ RUN apk add --update --no-cache \
 RUN adduser -D $USER --home $HOME
 
 COPY /serve_event_listener/ $HOME/
-COPY pyproject.toml $HOME/
 
 ENTRYPOINT [ "python3", "main.py" ]
