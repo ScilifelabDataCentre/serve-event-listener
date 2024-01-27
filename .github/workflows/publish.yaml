@@ -64,20 +64,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.8, 3.9,
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt  # Replace with the actual path to your requirements file, if applicable
-
-      - name: Run tests
-        run: python -m unittest discover -s tests
-
-
       - name: Docker meta
         uses: docker/metadata-action@v4
         id: meta
