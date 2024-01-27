@@ -47,9 +47,17 @@ class TestPodProcessing(unittest.TestCase):
         assert self.status_data.status_data[release].get("status") == "Running"
 
     def test_failed_image_pull(self):
-        pass
-        # Test scenario for a deployment initializing a pod with a failed image pull
-        # Create mock events for the failed image pull and verify the status_data
+        release = "r1234567"
+
+        self.pod.create(release)
+        self.status_data.update({"object": self.pod})
+        self.assertEqual(self.status_data.status_data[release].get("status"), "Created")
+
+        self.pod.error_image_pull()
+        self.status_data.update({"object": self.pod})
+        self.assertEqual(
+            self.status_data.status_data[release].get("status"), "Image Error"
+        )
 
 
 if __name__ == "__main__":

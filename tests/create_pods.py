@@ -73,5 +73,18 @@ class Pod(models.V1Pod):
         else:
             print("Pod is not created yet")
 
+    def error_image_pull(self):
+        if self.created and not self.deleted:
+            waiting = models.V1ContainerStateWaiting(
+                message="Some message", reason="ErrImagePull"
+            )
+            state = models.V1ContainerState(
+                waiting=waiting,
+            )
+            self.status.container_statuses[0].state = state
+            self.status.container_statuses[0].ready = False
+        else:
+            print("Pod not created yet")
+
     def get_current_time(self):
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
