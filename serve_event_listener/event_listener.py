@@ -16,9 +16,12 @@ USERNAME = os.environ.get("USERNAME", None)
 PASSWORD = os.environ.get("PASSWORD", None)
 KUBECONFIG = os.environ.get("KUBECONFIG", None)
 
-BASE_URL = os.environ.get("BASE_URL", "http://studio.192.168.0.130.nip.io:8080")
+BASE_URL = os.environ.get("BASE_URL", "http://studio.127.0.0.1.nip.io:8080")
 TOKEN_API_ENDPOINT = os.environ.get(
     "TOKEN_API_ENDPOINT", BASE_URL + "/api/v1/token-auth/"
+)
+APP_STATUS_API_ENDPOINT = os.environ.get(
+    "APP_STATUS_API_ENDPOINT", BASE_URL + "/api/v1/app-status/"
 )
 
 
@@ -75,13 +78,13 @@ class EventListener:
         try:
             self.check_status()
             self.setup_client()
-            self.fetch_token()
+            self.token = self.fetch_token()
             self._status_data = StatusData()
             self._status_queue = StatusQueue(self.post, self.token)
             self.setup_complete = True
-        except Exception:
+        except Exception as e:
             # TODO: Add specific exceptions here
-            logger.error("Setup failed")
+            logger.error(f"Setup failed {e}")
 
     def listen(self) -> None:
         """
@@ -203,9 +206,15 @@ class EventListener:
             logger.error(message)
             raise KeyError(message) from e
         logger.info("Token fetched successfully")
-        self.token = token
 
-    def post(self, url: str, data: dict, headers: Union[None, dict] = None):
+        return token
+
+    def post(
+        self,
+        url: str = APP_STATUS_API_ENDPOINT,
+        data: dict = {},
+        headers: Union[None, dict] = None,
+    ):
         """
         Send a POST request to the specified URL with the provided data and token.
 
@@ -217,12 +226,56 @@ class EventListener:
         Returns:
             int: The HTTP status code of the response.
         """
+        logger.debug(f"POST called to URL {url}")
         try:
-            response = requests.post(url=url, json=data, headers=headers, verify=False)
-            logger.info(f"POST returned - Status code: {response.status_code}")
+            for sleep in [1, 2, 4]:
+                response = requests.post(
+                    url=url, json=data, headers=headers, verify=False, timeout=1
+                )
+                status_code = response.status_code
 
-        except requests.exceptions.RequestException:
-            logger.error("Service did not respond.")
+                if status_code == 200:
+                    logger.info(f"Successful POST - Returned 200 - {response.text}")
+                    break
+
+                elif status_code == 400:
+                    logger.warning("Failed POST - Returned 400")
+                    break
+
+                elif status_code in [401, 403]:
+                    logger.warning(
+                        f"Recieved status code {status_code} - Fetching new token and retrying once"
+                    )
+                    self.token = self.fetch_token()
+                    self._status_queue.token = self.token
+
+                    # Retry once
+                    time.sleep(sleep)
+                    if sleep > 1:
+                        break
+
+                elif status_code in [404]:
+                    logger.warning(
+                        f"Recieved status code {status_code} - {response.text}"
+                    )
+                    break
+
+                elif str(status_code).startswith("5"):
+                    logger.warning(f"Recieved status code {status_code}")
+                    logger.warning(f"Retrying in {sleep} seconds")
+                    time.sleep(sleep)
+
+                else:
+                    logger.warning(f"Recieved uncaught status code: {status_code}")
+
+            logger.info(f"POST returned - Status code: {status_code}")
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Service did not respond. {e}")
+            response = None
+
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"ConnectionError {e}")
             response = None
 
         return response
