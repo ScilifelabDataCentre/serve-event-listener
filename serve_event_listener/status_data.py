@@ -107,7 +107,7 @@ class StatusData:
         Returns:
         - str: The status of the pod.
         """
-        empty_message = "empty message"
+        empty_message = ""
         pod_message = status_object.message if status_object.message else empty_message
 
         def process_container_statuses(container_statuses, init_containers=False):
@@ -121,7 +121,7 @@ class StatusData:
                     else:
                         return (
                             self.mapped_status(terminated.reason),
-                            terminated.message,
+                            terminated.message if terminated.message else empty_message,
                             pod_message,
                         )
 
@@ -130,7 +130,7 @@ class StatusData:
                 if waiting:
                     return (
                         self.mapped_status(waiting.reason),
-                        waiting.message,
+                        waiting.message if waiting.message else empty_message,
                         pod_message,
                     )
                 else:
