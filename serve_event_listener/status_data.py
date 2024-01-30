@@ -110,19 +110,20 @@ class StatusData:
         empty_message = "empty message"
         pod_message = status_object.message if status_object.message else empty_message
 
-        container_statuses = status_object.container_statuses
-
-        if container_statuses is not None:
+        def process_container_statuses(container_statuses, init_containers=False):
             for container_status in container_statuses:
                 state = container_status.state
 
                 terminated = state.terminated
                 if terminated:
-                    return (
-                        self.mapped_status(terminated.reason),
-                        terminated.message,
-                        pod_message,
-                    )
+                    if init_containers and terminated.reason == "Completed":
+                        break
+                    else:
+                        return (
+                            self.mapped_status(terminated.reason),
+                            terminated.message,
+                            pod_message,
+                        )
 
                 waiting = state.waiting
 
@@ -132,14 +133,28 @@ class StatusData:
                         waiting.message,
                         pod_message,
                     )
-
-            else:
-                running = state.running
-                ready = container_status.ready
-                if running and ready:
-                    return "Running", empty_message, pod_message
                 else:
-                    return "Pending", empty_message, pod_message
+                    running = state.running
+                    ready = container_status.ready
+                    if running and ready:
+                        return "Running", empty_message, pod_message
+                    else:
+                        return "Pending", empty_message, pod_message
+            else:
+                return None
+
+        init_container_statuses = status_object.init_container_statuses
+        container_statuses = status_object.container_statuses
+
+        if init_container_statuses is not None:
+            result = process_container_statuses(init_container_statuses)
+            if result:
+                return result
+
+        if container_statuses is not None:
+            result = process_container_statuses(container_statuses)
+            if result:
+                return result
 
         return status_object.phase, empty_message, pod_message
 
