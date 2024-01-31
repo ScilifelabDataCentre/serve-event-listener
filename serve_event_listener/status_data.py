@@ -147,7 +147,9 @@ class StatusData:
         container_statuses = status_object.container_statuses
 
         if init_container_statuses is not None:
-            result = process_container_statuses(init_container_statuses)
+            result = process_container_statuses(
+                init_container_statuses, init_containers=True
+            )
             if result:
                 return result
 
