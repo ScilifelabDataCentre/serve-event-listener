@@ -18,7 +18,7 @@ formatter = ColoredFormatter(
     },
 )
 
-DEBUG = os.environ.get("DEBUG", False)
+DEBUG = os.getenv("DEBUG", default="False").lower() in ("true", "1", "t")
 # Set up logging configuration with the ColoredFormatter
 if DEBUG:
     level = logging.DEBUG

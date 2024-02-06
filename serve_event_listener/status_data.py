@@ -19,6 +19,7 @@ K8S_STATUS_MAP = {
     "PodInitializing": "Pending",
     "ErrImagePull": "Image Error",
     "ImagePullBackOff": "Image Error",
+    "PostStartHookError": "Pod Error",
 }
 
 
