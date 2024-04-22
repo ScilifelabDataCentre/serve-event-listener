@@ -7,6 +7,7 @@ from typing import Any, Optional, Union
 import requests
 import urllib3
 from kubernetes import client, config, watch
+from kubernetes.client.exceptions import ApiException
 from status_data import StatusData
 from status_queue import StatusQueue
 
@@ -124,6 +125,12 @@ class EventListener:
 
                 except urllib3.exceptions.ProtocolError as e:
                     logger.error(f"ProtocolError occurred: {e!r}")
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retries += 1
+
+                except ApiException as e:
+                    logger.error(f"ApiException occurred: {e!r}")
                     logger.info(f"Retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     retries += 1
