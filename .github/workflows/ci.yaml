@@ -20,12 +20,16 @@ jobs:
         HADOLINT_RECURSIVE: "true"
 
     steps:
-      - uses: psf/black@stable
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run linter black
+        uses: psf/black@stable
         with:
           options: "-l 120 --check"
 
-      - uses: actions/checkout@v3
-      - uses: hadolint/hadolint-action@v3.1.0
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: "Dockerfile*"
 
@@ -57,7 +61,7 @@ jobs:
 
 
   build:
-    name: Build a ci image
+    name: Build a CI image
     runs-on: ubuntu-latest
 
     steps:
