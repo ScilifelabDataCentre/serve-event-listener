@@ -99,6 +99,8 @@ class EventListener:
         )
 
         max_retries = 10
+
+        # Duration in seconds to wait between retrying used when some exceptions occur
         retry_delay = 2
 
         if self.setup_complete:
@@ -251,7 +253,7 @@ class EventListener:
 
                 elif status_code in [401, 403]:
                     logger.warning(
-                        f"Recieved status code {status_code} - Fetching new token and retrying once"
+                        f"Received status code {status_code} - Fetching new token and retrying once"
                     )
                     self.token = self.fetch_token()
                     self._status_queue.token = self.token
@@ -263,17 +265,17 @@ class EventListener:
 
                 elif status_code in [404]:
                     logger.warning(
-                        f"Recieved status code {status_code} - {response.text}"
+                        f"Received status code {status_code} - {response.text}"
                     )
                     break
 
                 elif str(status_code).startswith("5"):
-                    logger.warning(f"Recieved status code {status_code}")
+                    logger.warning(f"Received status code {status_code}")
                     logger.warning(f"Retrying in {sleep} seconds")
                     time.sleep(sleep)
 
                 else:
-                    logger.warning(f"Recieved uncaught status code: {status_code}")
+                    logger.warning(f"Received uncaught status code: {status_code}")
 
             logger.info(f"POST returned - Status code: {status_code}")
 
