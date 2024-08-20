@@ -31,7 +31,9 @@ class StatusQueue:
                 release = status_data["release"]
                 new_status = status_data["new-status"]
                 if new_status == "Deleted":
-                    logger.info(f"Processing release: {release}. New status is Deleted!")
+                    logger.info(
+                        f"Processing release: {release}. New status is Deleted!"
+                    )
 
                 self.post_handler(
                     data=status_data,
@@ -40,7 +42,9 @@ class StatusQueue:
 
                 self.queue.task_done()
 
-                logger.debug(f"Processed queue successfully of release {release}, new status={new_status}")
+                logger.debug(
+                    f"Processed queue successfully of release {release}, new status={new_status}"
+                )
             except queue.Empty:
                 pass  # Continue looping if the queue is empty
 

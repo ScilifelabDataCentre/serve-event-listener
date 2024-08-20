@@ -182,9 +182,11 @@ class StatusData:
         Returns:
             Dict: Updated status data.
         """
-        logger.debug(f"Release {release}. Status data before update:{status_data}. \
+        logger.debug(
+            f"Release {release}. Status data before update:{status_data}. \
                      release in status data? {release not in status_data}. \
-                    creation_timestamp={creation_timestamp}, deletion_timestamp={deletion_timestamp}")
+                    creation_timestamp={creation_timestamp}, deletion_timestamp={deletion_timestamp}"
+        )
         if (
             release not in status_data
             or creation_timestamp >= status_data[release]["creation_timestamp"]
