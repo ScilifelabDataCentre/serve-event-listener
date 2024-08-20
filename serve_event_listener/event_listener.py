@@ -151,7 +151,7 @@ class EventListener:
 
     def check_status(self) -> bool:
         """
-        Checks the status of the EventListener.
+        Checks the status of the Serve API.
 
         Returns:
         - bool: True if the status is okay, False otherwise.
@@ -291,10 +291,10 @@ class EventListener:
 
     def get(self, url: str, headers: Union[None, dict] = None):
         """
-        Send a POST request to the specified URL with the provided data and token.
+        Send a GET request to the specified URL with the provided data and token.
 
         Args:
-            url (str): The URL to send the POST request to.
+            url (str): The URL to send the GET request to.
             data (dict): The data to be included in the POST request.
             header (None or dict): header for the request.
 
