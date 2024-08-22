@@ -97,15 +97,21 @@ class PodStatus(models.V1PodStatus):
         self.init_container_statuses = []
         self.container_statuses = []
 
-    def add_init_container_status(self, state: str, reason: str):
+    def add_init_container_status(self, state: str, reason: str, exit_code: int = 0):
         """
-        state one of: waiting,
-        reason="ContainerCreating"
+        Adds an init container status object to the list of init container statuses.
+        state one of: waiting, terminated
         """
 
         if state == "waiting":
             container_state = models.V1ContainerState(
                 waiting=models.V1ContainerStateWaiting(reason=reason)
+            )
+        elif state == "terminated":
+            container_state = models.V1ContainerState(
+                terminated=models.V1ContainerStateTerminated(
+                    exit_code=exit_code, reason=reason
+                )
             )
         else:
             container_state = models.V1ContainerState()
@@ -120,3 +126,39 @@ class PodStatus(models.V1PodStatus):
         )
 
         self.init_container_statuses.append(container_status)
+
+    def add_container_status(
+        self, state: str, reason: str, ready: bool = False, exit_code: int = 0
+    ):
+        """
+        Adds an regular, non-init container status object to the list of container statuses.
+        state one of: waiting, running
+        """
+
+        if state == "waiting":
+            container_state = models.V1ContainerState(
+                waiting=models.V1ContainerStateWaiting(reason=reason)
+            )
+        elif state == "running":
+            container_state = models.V1ContainerState(
+                running=models.V1ContainerStateRunning()
+            )
+        elif state == "terminated":
+            container_state = models.V1ContainerState(
+                terminated=models.V1ContainerStateTerminated(
+                    exit_code=exit_code, reason=reason
+                )
+            )
+        else:
+            container_state = models.V1ContainerState()
+
+        container_status = models.V1ContainerStatus(
+            name="name",
+            state=container_state,
+            image="some image",
+            image_id="123",
+            ready=ready,
+            restart_count=0,
+        )
+
+        self.container_statuses.append(container_status)

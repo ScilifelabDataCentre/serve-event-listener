@@ -155,22 +155,78 @@ class TestPodProcessing(unittest.TestCase):
 
 
 class TestStatusConverter(unittest.TestCase):
-    """Verifies the translation logic of k8s status objects to app status codes."""
+    """Verifies the translation logic of k8s status objects to app status codes.
 
-    # determine_status_from_k8s(status_object: V1PodStatus) -> Tuple[str, str, str]
-    # status_object: phase, message, pod_message
+    This executes static method determine_status_from_k8s with signature:
+    determine_status_from_k8s(status_object: V1PodStatus) -> Tuple[str, str, str]
+    The response object has structure: status_object: phase, message, pod_message
+    """
 
-    def test_empty_status(self):
-        """This scenario tests an empty k8s pod status object."""
+    def test_waiting_container_reason_pending(self):
+        """
+        This scenario tests a k8s pod status object with a container with the following status attributes:
+        state=waiting, reason=PodInitializing
+        """
         podstatus = PodStatus()
-        expected = (None, "", "")
+        podstatus.add_container_status("waiting", "PodInitializing")
+        expected = ("Pending", "", "")
+        actual = StatusData.determine_status_from_k8s(podstatus)
+        self.assertEqual(actual, expected)
+
+    def test_running_container_status_not_ready(self):
+        """
+        This scenario tests a k8s pod status object with a container with the following status attributes:
+        state=running, ready=false
+        """
+        podstatus = PodStatus()
+        podstatus.add_container_status("running", None, ready=False)
+        expected = ("Pending", "", "")
+        actual = StatusData.determine_status_from_k8s(podstatus)
+        self.assertEqual(actual, expected)
+
+    def test_running_container_status_ready(self):
+        """
+        This scenario tests a k8s pod status object with a container with the following status attributes:
+        state=running, ready=true
+        """
+        podstatus = PodStatus()
+        podstatus.add_container_status("running", None, ready=True)
+        expected = ("Running", "", "")
+        actual = StatusData.determine_status_from_k8s(podstatus)
+        self.assertEqual(actual, expected)
+
+    def test_deleted_container(self):
+        """
+        This scenario tests a k8s pod status object with a container with the following status attributes:
+        state=terminated, terminated reason="Terminated", message="Deleted", exit_code=1
+        """
+        podstatus = PodStatus()
+        podstatus.add_container_status(
+            "terminated", "Terminated", ready=False, exit_code=1
+        )
+        expected = ("Terminated", "", "")
         actual = StatusData.determine_status_from_k8s(podstatus)
         self.assertEqual(actual, expected)
 
     def test_terminated_init_container_reason_error(self):
         """
-        This scenario tests a k8s pod status object with a terminated init container.
-        Input: terminated=true, init containers = true, terminated.reason = PostStartHookError
+        This scenario tests a k8s pod status object with an init container with the following status attributes:
+        Input: state=terminated, terminated.reason=PostStartHookError
+        The Terminated exit code is set to 137 which could indicate for example that the container ran out of memory.
+        See https://containersolutions.github.io/runbooks/posts/kubernetes/crashloopbackoff/#step-3
+        """
+        podstatus = PodStatus()
+        podstatus.add_init_container_status(
+            "terminated", "PostStartHookError", exit_code=137
+        )
+        expected = ("Pod Error", "", "")
+        actual = StatusData.determine_status_from_k8s(podstatus)
+        self.assertEqual(actual, expected)
+
+    def test_waiting_init_container_reason_error(self):
+        """
+        This scenario tests a k8s pod status object with an init container with the following status attributes:
+        Input: state=waiting, terminated.reason=PostStartHookError
         """
         podstatus = PodStatus()
         podstatus.add_init_container_status("waiting", "PostStartHookError")
@@ -178,14 +234,25 @@ class TestStatusConverter(unittest.TestCase):
         actual = StatusData.determine_status_from_k8s(podstatus)
         self.assertEqual(actual, expected)
 
-    def test_terminated_init_container_reason_completed_etc(self):
+    def test_multiple_container_status_terminated_init_container_running_container(
+        self,
+    ):
         """
-        This scenario tests a k8s pod status object with a terminated init container.
-        Input: terminated=true, init containers = true, terminated.reason = Completed
+        This scenario tests a k8s pod status object with two containers.
+        Init container input: state=terminated, terminated.reason=Completed
+        Regular container input: stater=running, ready=false
         """
         podstatus = PodStatus()
-        podstatus.add_init_container_status("waiting", "Completed")
-        expected = ("Pod Error", "", "")
+        podstatus.add_init_container_status("terminated", "Completed")
+        podstatus.add_container_status("running", "", ready=True)
+        expected = ("Running", "", "")
+        actual = StatusData.determine_status_from_k8s(podstatus)
+        self.assertEqual(actual, expected)
+
+    def test_missing_container_status(self):
+        """This scenario tests an empty k8s pod status object."""
+        podstatus = PodStatus()
+        expected = (None, "", "")
         actual = StatusData.determine_status_from_k8s(podstatus)
         self.assertEqual(actual, expected)
 
