@@ -187,7 +187,27 @@ class EventListener:
 
         logger.info("Kubernetes client successfully set")
         self.client = client.CoreV1Api()
+
+        # self.list_all_pods()
+
         self.watch = watch.Watch()
+
+    def list_all_pods(self):
+        logger.info("Listing all pods and status codes")
+
+        try:
+            api_response = self.client.list_namespaced_pod(
+                self.namespace, limit=500, timeout_seconds=120, watch=False
+            )
+
+            for pod in api_response.items:
+                # TODO get_status() similar to logic in StatusData
+                # Make this a helper function and unit test?
+                print(f"{pod.metadata.name} with status {pod.status}")
+        except ApiException as e:
+            logger.warning(
+                f"Exception when calling CoreV1Api->list_namespaced_pod. {e}"
+            )
 
     def fetch_token(self):
         """

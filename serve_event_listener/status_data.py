@@ -27,6 +27,80 @@ class StatusData:
     def __init__(self):
         self.status_data = {}
 
+    """
+    @staticmethod
+    def determine_status_from_k8s(status_object: V1PodStatus) -> Tuple[str, str, str]:
+        # TODO: a copy of function from StatusData
+        empty_message = ""
+        pod_message = status_object.message if status_object.message else empty_message
+
+        def process_container_statuses(container_statuses, init_containers=False):
+            for container_status in container_statuses:
+                state = container_status.state
+
+                terminated = state.terminated
+                if terminated:
+                    if init_containers and terminated.reason == "Completed":
+                        break
+                    else:
+                        return (
+                            self.mapped_status(terminated.reason),
+                            terminated.message if terminated.message else empty_message,
+                            pod_message,
+                        )
+
+                waiting = state.waiting
+
+                if waiting:
+                    return (
+                        self.mapped_status(waiting.reason),
+                        waiting.message if waiting.message else empty_message,
+                        pod_message,
+                    )
+                else:
+                    running = state.running
+                    ready = container_status.ready
+                    if running and ready:
+                        return "Running", empty_message, pod_message
+                    else:
+                        return "Pending", empty_message, pod_message
+            else:
+                return None
+
+        init_container_statuses = status_object.init_container_statuses
+        container_statuses = status_object.container_statuses
+
+        if init_container_statuses is not None:
+            result = process_container_statuses(
+                init_container_statuses, init_containers=True
+            )
+            if result:
+                return result
+
+        if container_statuses is not None:
+            result = process_container_statuses(container_statuses)
+            if result:
+                return result
+
+        return status_object.phase, empty_message, pod_message """
+
+    @staticmethod
+    def get_mapped_status(reason: str) -> str:
+        return K8S_STATUS_MAP.get(reason, reason)
+
+    @staticmethod
+    def get_timestamp_as_str() -> str:
+        """
+        Get the current UTC time as a formatted string.
+
+        Returns:
+            str: The current UTC time in ISO format with milliseconds.
+        """
+        current_utc_time = (
+            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        )
+        return current_utc_time
+
     def update(self, event: dict) -> None:
         """
         Process a Kubernetes pod event and update the status_data.
@@ -121,7 +195,7 @@ class StatusData:
                         break
                     else:
                         return (
-                            self.mapped_status(terminated.reason),
+                            StatusData.get_mapped_status(terminated.reason),
                             terminated.message if terminated.message else empty_message,
                             pod_message,
                         )
@@ -130,7 +204,7 @@ class StatusData:
 
                 if waiting:
                     return (
-                        self.mapped_status(waiting.reason),
+                        StatusData.get_mapped_status(waiting.reason),
                         waiting.message if waiting.message else empty_message,
                         pod_message,
                     )
@@ -182,6 +256,7 @@ class StatusData:
         Returns:
             Dict: Updated status data.
         """
+
         logger.debug(
             f"Release {release}. Status data before update:{status_data}. \
                      release in status data? {release not in status_data}. \
@@ -195,7 +270,7 @@ class StatusData:
                 "creation_timestamp": creation_timestamp,
                 "deletion_timestamp": deletion_timestamp,
                 "status": "Deleted" if deletion_timestamp else status,
-                "event-ts": self.get_timestamp_as_str(),
+                "event-ts": StatusData.get_timestamp_as_str(),
                 "sent": False,
             }
             logger.debug(
@@ -211,18 +286,3 @@ class StatusData:
             self.status_data, key=lambda k: self.status_data[k]["event-ts"]
         )
         return latest_release
-
-    def mapped_status(self, reason: str) -> str:
-        return K8S_STATUS_MAP.get(reason, reason)
-
-    def get_timestamp_as_str(self) -> str:
-        """
-        Get the current UTC time as a formatted string.
-
-        Returns:
-            str: The current UTC time in ISO format with milliseconds.
-        """
-        current_utc_time = (
-            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-        )
-        return current_utc_time

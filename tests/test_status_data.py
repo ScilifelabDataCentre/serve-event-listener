@@ -154,5 +154,29 @@ class TestPodProcessing(unittest.TestCase):
         )
 
 
+class TestStatusDataUtilities(unittest.TestCase):
+    """Verifies the app status utility methods."""
+
+    def test_mapped_status(self):
+        """Test the mapped status codes.
+        Not all codes need to be tested.
+        """
+
+        actual = StatusData.get_mapped_status("CrashLoopBackOff")
+        self.assertEqual(actual, "Error")
+
+        actual = StatusData.get_mapped_status("Completed")
+        self.assertEqual(actual, "Retrying...")
+
+        actual = StatusData.get_mapped_status("ErrImagePull")
+        self.assertEqual(actual, "Image Error")
+
+    def test_mapped_status_nonexisting_code(self):
+        """Test the mapped status codes in a scenario with a non-existing code."""
+
+        actual = StatusData.get_mapped_status("NonexistingCode")
+        self.assertEqual(actual, "NonexistingCode")
+
+
 if __name__ == "__main__":
     unittest.main()
