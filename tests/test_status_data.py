@@ -1,7 +1,7 @@
 import unittest
 
 from serve_event_listener.status_data import StatusData
-from tests.create_pods import Pod
+from tests.create_pods import Pod, PodStatus
 
 
 class TestPodProcessing(unittest.TestCase):
@@ -154,14 +154,47 @@ class TestPodProcessing(unittest.TestCase):
         )
 
 
+class TestStatusConverter(unittest.TestCase):
+    """Verifies the translation logic of k8s status objects to app status codes."""
+
+    # determine_status_from_k8s(status_object: V1PodStatus) -> Tuple[str, str, str]
+    # status_object: phase, message, pod_message
+
+    def test_empty_status(self):
+        """This scenario tests an empty k8s pod status object."""
+        podstatus = PodStatus()
+        expected = (None, "", "")
+        actual = StatusData.determine_status_from_k8s(podstatus)
+        self.assertEqual(actual, expected)
+
+    def test_terminated_init_container_reason_error(self):
+        """
+        This scenario tests a k8s pod status object with a terminated init container.
+        Input: terminated=true, init containers = true, terminated.reason = PostStartHookError
+        """
+        podstatus = PodStatus()
+        podstatus.add_init_container_status("waiting", "PostStartHookError")
+        expected = ("Pod Error", "", "")
+        actual = StatusData.determine_status_from_k8s(podstatus)
+        self.assertEqual(actual, expected)
+
+    def test_terminated_init_container_reason_completed_etc(self):
+        """
+        This scenario tests a k8s pod status object with a terminated init container.
+        Input: terminated=true, init containers = true, terminated.reason = Completed
+        """
+        podstatus = PodStatus()
+        podstatus.add_init_container_status("waiting", "Completed")
+        expected = ("Pod Error", "", "")
+        actual = StatusData.determine_status_from_k8s(podstatus)
+        self.assertEqual(actual, expected)
+
+
 class TestStatusDataUtilities(unittest.TestCase):
     """Verifies the app status utility methods."""
 
     def test_mapped_status(self):
-        """Test the mapped status codes.
-        Not all codes need to be tested.
-        """
-
+        """Test the mapped status codes. Not all codes need to be tested."""
         actual = StatusData.get_mapped_status("CrashLoopBackOff")
         self.assertEqual(actual, "Error")
 
@@ -173,7 +206,6 @@ class TestStatusDataUtilities(unittest.TestCase):
 
     def test_mapped_status_nonexisting_code(self):
         """Test the mapped status codes in a scenario with a non-existing code."""
-
         actual = StatusData.get_mapped_status("NonexistingCode")
         self.assertEqual(actual, "NonexistingCode")
 

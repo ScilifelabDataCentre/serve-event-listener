@@ -27,154 +27,16 @@ class StatusData:
     def __init__(self):
         self.status_data = {}
 
-    """
     @staticmethod
     def determine_status_from_k8s(status_object: V1PodStatus) -> Tuple[str, str, str]:
-        # TODO: a copy of function from StatusData
-        empty_message = ""
-        pod_message = status_object.message if status_object.message else empty_message
-
-        def process_container_statuses(container_statuses, init_containers=False):
-            for container_status in container_statuses:
-                state = container_status.state
-
-                terminated = state.terminated
-                if terminated:
-                    if init_containers and terminated.reason == "Completed":
-                        break
-                    else:
-                        return (
-                            self.mapped_status(terminated.reason),
-                            terminated.message if terminated.message else empty_message,
-                            pod_message,
-                        )
-
-                waiting = state.waiting
-
-                if waiting:
-                    return (
-                        self.mapped_status(waiting.reason),
-                        waiting.message if waiting.message else empty_message,
-                        pod_message,
-                    )
-                else:
-                    running = state.running
-                    ready = container_status.ready
-                    if running and ready:
-                        return "Running", empty_message, pod_message
-                    else:
-                        return "Pending", empty_message, pod_message
-            else:
-                return None
-
-        init_container_statuses = status_object.init_container_statuses
-        container_statuses = status_object.container_statuses
-
-        if init_container_statuses is not None:
-            result = process_container_statuses(
-                init_container_statuses, init_containers=True
-            )
-            if result:
-                return result
-
-        if container_statuses is not None:
-            result = process_container_statuses(container_statuses)
-            if result:
-                return result
-
-        return status_object.phase, empty_message, pod_message """
-
-    @staticmethod
-    def get_mapped_status(reason: str) -> str:
-        return K8S_STATUS_MAP.get(reason, reason)
-
-    @staticmethod
-    def get_timestamp_as_str() -> str:
-        """
-        Get the current UTC time as a formatted string.
-
-        Returns:
-            str: The current UTC time in ISO format with milliseconds.
-        """
-        current_utc_time = (
-            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-        )
-        return current_utc_time
-
-    def update(self, event: dict) -> None:
-        """
-        Process a Kubernetes pod event and update the status_data.
-
-        Parameters:
-        - event (dict): The Kubernetes pod event.
-        - status_data (dict): Dictionary containing status info.
-
-        Returns:
-        - status_data (dict): Updated dictionary containing status info.
-        - release (str): The release of the updated status
-        """
-        logger.debug("Event triggered update_status_data")
-
-        pod = event.get("object", None)
-
-        # TODO: Try catch here instead
-        if pod:
-            status_object = pod.status
-
-            status, pod_message, container_message = self.get_status(status_object)
-            release = pod.metadata.labels.get("release")
-
-            logger.debug(f"Event triggered from release {release}")
-            logger.debug(f"Status: {status} - Message: {container_message}")
-
-            creation_timestamp = pod.metadata.creation_timestamp
-            deletion_timestamp = pod.metadata.deletion_timestamp
-
-            self.status_data = self.update_or_create_status(
-                self.status_data,
-                status,
-                release,
-                creation_timestamp,
-                deletion_timestamp,
-            )
-
-            self.status_data[release]["pod-msg"] = pod_message
-            self.status_data[release]["container-msg"] = container_message
-
-    def get_post_data(self) -> dict:
-        """
-        The Serve API app-statuses expects a json on this form:
-        {
-            “token“: <token>,
-            “new-status“: <new status>,
-            “event-msg“: {“pod-msg“: <msg>, “container-msg“: <msg>},
-            “event-ts“: <event timestamp>
-        }
-
-        Parameters:
-        - status_data (dict): status_data dict from stream.
-
-        Returns:
-        - str: post data on the form explained above
-        """
-        release = self.get_latest_release()
-        data = self.status_data[release]
-
-        post_data = {
-            "release": release,
-            "new-status": data.get("status", None),
-            "event-ts": data.get("event-ts", None),
-            "event-msg": {
-                "pod-msg": data.get("pod-msg", None),
-                "container-msg": data.get("container-msg", None),
-            },
-        }
-        logger.debug("Converting to POST data")
-        return post_data
-
-    def get_status(self, status_object: V1PodStatus) -> Tuple[str, str, str]:
         """
         Get the status of a Kubernetes pod.
+        First checks init_container_statuses, then container_statuses
+        Properties used to translate the pod status:
+        - container.state
+        - state.terminated.reason
+        - state.waiting, waiting.reason
+        - state.running and container_status.ready
 
         Parameters:
         - status_object (dict): The Kubernetes status object.
@@ -234,6 +96,96 @@ class StatusData:
                 return result
 
         return status_object.phase, empty_message, pod_message
+
+    @staticmethod
+    def get_mapped_status(reason: str) -> str:
+        return K8S_STATUS_MAP.get(reason, reason)
+
+    @staticmethod
+    def get_timestamp_as_str() -> str:
+        """
+        Get the current UTC time as a formatted string.
+
+        Returns:
+            str: The current UTC time in ISO format with milliseconds.
+        """
+        current_utc_time = (
+            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        )
+        return current_utc_time
+
+    def update(self, event: dict) -> None:
+        """
+        Process a Kubernetes pod event and update the status_data.
+
+        Parameters:
+        - event (dict): The Kubernetes pod event.
+        - status_data (dict): Dictionary containing status info.
+
+        Returns:
+        - status_data (dict): Updated dictionary containing status info.
+        - release (str): The release of the updated status
+        """
+        logger.debug("Event triggered update_status_data")
+
+        pod = event.get("object", None)
+
+        # TODO: Try catch here instead
+        if pod:
+            status_object = pod.status
+
+            status, pod_message, container_message = (
+                StatusData.determine_status_from_k8s(status_object)
+            )
+            release = pod.metadata.labels.get("release")
+
+            logger.debug(f"Event triggered from release {release}")
+            logger.debug(f"Status: {status} - Message: {container_message}")
+
+            creation_timestamp = pod.metadata.creation_timestamp
+            deletion_timestamp = pod.metadata.deletion_timestamp
+
+            self.status_data = self.update_or_create_status(
+                self.status_data,
+                status,
+                release,
+                creation_timestamp,
+                deletion_timestamp,
+            )
+
+            self.status_data[release]["pod-msg"] = pod_message
+            self.status_data[release]["container-msg"] = container_message
+
+    def get_post_data(self) -> dict:
+        """
+        The Serve API app-statuses expects a json on this form:
+        {
+            “token“: <token>,
+            “new-status“: <new status>,
+            “event-msg“: {“pod-msg“: <msg>, “container-msg“: <msg>},
+            “event-ts“: <event timestamp>
+        }
+
+        Parameters:
+        - status_data (dict): status_data dict from stream.
+
+        Returns:
+        - str: post data on the form explained above
+        """
+        release = self.get_latest_release()
+        data = self.status_data[release]
+
+        post_data = {
+            "release": release,
+            "new-status": data.get("status", None),
+            "event-ts": data.get("event-ts", None),
+            "event-msg": {
+                "pod-msg": data.get("pod-msg", None),
+                "container-msg": data.get("container-msg", None),
+            },
+        }
+        logger.debug("Converting to POST data")
+        return post_data
 
     def update_or_create_status(
         self,

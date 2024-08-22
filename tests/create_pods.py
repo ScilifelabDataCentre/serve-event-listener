@@ -88,3 +88,35 @@ class Pod(models.V1Pod):
 
     def get_current_time(self):
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+class PodStatus(models.V1PodStatus):
+
+    def __init__(self):
+        super().__init__()
+        self.init_container_statuses = []
+        self.container_statuses = []
+
+    def add_init_container_status(self, state: str, reason: str):
+        """
+        state one of: waiting,
+        reason="ContainerCreating"
+        """
+
+        if state == "waiting":
+            container_state = models.V1ContainerState(
+                waiting=models.V1ContainerStateWaiting(reason=reason)
+            )
+        else:
+            container_state = models.V1ContainerState()
+
+        container_status = models.V1ContainerStatus(
+            name="name",
+            state=container_state,
+            image="some image",
+            image_id="123",
+            ready=False,
+            restart_count=0,
+        )
+
+        self.init_container_statuses.append(container_status)
