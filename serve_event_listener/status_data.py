@@ -270,7 +270,7 @@ class StatusData:
 
         logger.debug(
             f"Release {release}. Status data before update:{status_data}. \
-                     release in status data? {release not in status_data}. \
+                     {(release in status_data)=}? \
                     creation_timestamp={creation_timestamp}, deletion_timestamp={deletion_timestamp}"
         )
         if (
