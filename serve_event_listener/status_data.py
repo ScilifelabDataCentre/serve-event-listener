@@ -46,7 +46,7 @@ class StatusData:
         - status_object (dict): The Kubernetes status object.
 
         Returns:
-        - str: The status of the pod.
+        - Tuple[str, str, str]: The status of the pod, container message, pod message
         """
         empty_message = ""
         pod_message = status_object.message if status_object.message else empty_message
@@ -128,14 +128,16 @@ class StatusData:
         Because this can be as costly operation it is only used at critical times such as deleted pods.
 
         Returns:
-        - A tuple consisting of status, pod_message, container_message
+        - Tuple[str, str, str]: The status of the pod, container message, pod message
+
+        If no pod matches the release, then return None, "", ""
         """
         logger.debug(
             f"Getting the status of release {release} directly from k8s via the api client"
         )
 
-        status = "Unset"
-        pod_message = container_message = ""
+        status = None
+        container_message = pod_message = ""
 
         try:
             api_response = self.k8s_api_client.list_namespaced_pod(
@@ -144,11 +146,13 @@ class StatusData:
 
             for pod in api_response.items:
                 if pod.metadata.labels.get("release") == release:
-                    pod_status = StatusData.determine_status_from_k8s(pod.status)
-                    if status == "Unset":
+                    pod_status, container_message, pod_message = (
+                        StatusData.determine_status_from_k8s(pod.status)
+                    )
+                    if status is None:
                         status = pod_status
                         logger.debug(
-                            f"Preliminary status of release {release} set from Unset to {status}"
+                            f"Preliminary status of release {release} set from None to {status}"
                         )
                     elif status == "Deleted":
                         # All other statuses override Deleted
@@ -167,7 +171,7 @@ class StatusData:
                 f"Exception when calling CoreV1Api->list_namespaced_pod. {e}"
             )
 
-        return status, pod_message, container_message
+        return status, container_message, pod_message
 
     def update(self, event: dict) -> None:
         """
@@ -189,7 +193,7 @@ class StatusData:
         if pod:
             status_object = pod.status
 
-            status, pod_message, container_message = (
+            status, container_message, pod_message = (
                 StatusData.determine_status_from_k8s(status_object)
             )
             release = pod.metadata.labels.get("release")
@@ -279,9 +283,17 @@ class StatusData:
             if status == "Deleted":
                 # Status Deleted is a destructive action
                 # Therefore we double-check the k8s status directly upon detecting this
-                status = self.fetch_status_from_k8s_api(release)
-                if status != "Deleted":
-                    deletion_timestamp = None
+                if self.k8s_api_client:
+                    # Only use if the k8s client api has been set
+                    # Unit tests for example do not currently set a k8s api
+                    status, *_ = self.fetch_status_from_k8s_api(release)
+
+                    if status is None:
+                        # No pod with this release found. Set status to Deleted
+                        status = "Deleted"
+
+                    if status != "Deleted":
+                        deletion_timestamp = None
 
             status_data[release] = {
                 "creation_timestamp": creation_timestamp,
