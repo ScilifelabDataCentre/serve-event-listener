@@ -77,10 +77,11 @@ class EventListener:
             "\n\n\t{}\n\t   Running Setup Process \n\t{}\n".format("#" * 30, "#" * 30)
         )
         try:
-            self.check_status()
+            self.check_serve_api_status()
             self.setup_client()
             self.token = self.fetch_token()
             self._status_data = StatusData()
+            self._status_data.set_k8s_api_client(self.client, self.namespace)
             self._status_queue = StatusQueue(self.post, self.token)
             self.setup_complete = True
         except Exception as e:
@@ -149,7 +150,7 @@ class EventListener:
         else:
             logger.warning("Setup not completed - run .setup() first")
 
-    def check_status(self) -> bool:
+    def check_serve_api_status(self) -> bool:
         """
         Checks the status of the Serve API.
 
@@ -193,7 +194,7 @@ class EventListener:
         self.watch = watch.Watch()
 
     def list_all_pods(self):
-        logger.info("Listing all pods and status codes")
+        logger.info("Listing all pods and their status codes")
 
         try:
             api_response = self.client.list_namespaced_pod(
@@ -201,9 +202,11 @@ class EventListener:
             )
 
             for pod in api_response.items:
-                # TODO get_status() similar to logic in StatusData
-                # Make this a helper function and unit test?
-                print(f"{pod.metadata.name} with status {pod.status}")
+                release = pod.metadata.labels.get("release")
+                app_status = StatusData.determine_status_from_k8s(pod.status)
+                logger.info(
+                    f"Release={release}, {pod.metadata.name} with status {app_status}"
+                )
         except ApiException as e:
             logger.warning(
                 f"Exception when calling CoreV1Api->list_namespaced_pod. {e}"

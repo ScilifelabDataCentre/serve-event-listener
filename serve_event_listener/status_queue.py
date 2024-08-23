@@ -31,6 +31,7 @@ class StatusQueue:
                 release = status_data["release"]
                 new_status = status_data["new-status"]
                 if new_status == "Deleted":
+                    # TODO: Be careful with deleting releases! Check the truth in k8s.
                     logger.info(
                         f"Processing release: {release}. New status is Deleted!"
                     )

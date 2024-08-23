@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Tuple, Union
 
 import requests
+from kubernetes import client
+from kubernetes.client.exceptions import ApiException
 from kubernetes.client.models import V1PodStatus
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,8 @@ K8S_STATUS_MAP = {
 class StatusData:
     def __init__(self):
         self.status_data = {}
+        self.k8s_api_client = None
+        self.namespace = "default"
 
     @staticmethod
     def determine_status_from_k8s(status_object: V1PodStatus) -> Tuple[str, str, str]:
@@ -114,6 +118,57 @@ class StatusData:
         )
         return current_utc_time
 
+    def set_k8s_api_client(self, k8s_api_client: client.CoreV1Api, namespace: str):
+        self.k8s_api_client = k8s_api_client
+        self.namespace = namespace
+
+    def fetch_status_from_k8s_api(self, release: str) -> Tuple[str, str, str]:
+        """
+        Get the actual status of a release from k8s via the client API.
+        Because this can be as costly operation it is only used at critical times such as deleted pods.
+
+        Returns:
+        - A tuple consisting of status, pod_message, container_message
+        """
+        logger.debug(
+            f"Getting the status of release {release} directly from k8s via the api client"
+        )
+
+        status = "Unset"
+        pod_message = container_message = ""
+
+        try:
+            api_response = self.k8s_api_client.list_namespaced_pod(
+                self.namespace, limit=500, timeout_seconds=120, watch=False
+            )
+
+            for pod in api_response.items:
+                if pod.metadata.labels.get("release") == release:
+                    pod_status = StatusData.determine_status_from_k8s(pod.status)
+                    if status == "Unset":
+                        status = pod_status
+                        logger.debug(
+                            f"Preliminary status of release {release} set from Unset to {status}"
+                        )
+                    elif status == "Deleted":
+                        # All other statuses override Deleted
+                        status = pod_status
+                        logger.debug(
+                            f"Preliminary status of release {release} set from Deleted to {status}"
+                        )
+                    elif pod_status == "Running":
+                        # Running overrides all other statuses
+                        status = pod_status
+                        logger.debug(
+                            f"Preliminary status of release {release} set to {status}"
+                        )
+        except ApiException as e:
+            logger.warning(
+                f"Exception when calling CoreV1Api->list_namespaced_pod. {e}"
+            )
+
+        return status, pod_message, container_message
+
     def update(self, event: dict) -> None:
         """
         Process a Kubernetes pod event and update the status_data.
@@ -122,7 +177,7 @@ class StatusData:
         - event (dict): The Kubernetes pod event.
         - status_data (dict): Dictionary containing status info.
 
-        Returns:
+        Sets:
         - status_data (dict): Updated dictionary containing status info.
         - release (str): The release of the updated status
         """
@@ -218,10 +273,20 @@ class StatusData:
             release not in status_data
             or creation_timestamp >= status_data[release]["creation_timestamp"]
         ):
+
+            status = "Deleted" if deletion_timestamp else status
+
+            if status == "Deleted":
+                # Status Deleted is a destructive action
+                # Therefore we double-check the k8s status directly upon detecting this
+                status = self.fetch_status_from_k8s_api(release)
+                if status != "Deleted":
+                    deletion_timestamp = None
+
             status_data[release] = {
                 "creation_timestamp": creation_timestamp,
                 "deletion_timestamp": deletion_timestamp,
-                "status": "Deleted" if deletion_timestamp else status,
+                "status": status,
                 "event-ts": StatusData.get_timestamp_as_str(),
                 "sent": False,
             }
