@@ -1,3 +1,4 @@
+import time
 import unittest
 
 from serve_event_listener.status_data import StatusData
@@ -74,13 +75,19 @@ class TestPodProcessing(unittest.TestCase):
         self.new_pod.create(release)
         self.status_data.update({"object": self.new_pod})
 
+        time.sleep(0.01)
+
         self.pod.delete()
         self.status_data.update({"object": self.pod})
+
+        time.sleep(0.01)
 
         self.new_pod.running()
         self.status_data.update({"object": self.new_pod})
 
         self.assertEqual(self.status_data.status_data[release].get("status"), "Running")
+
+        time.sleep(0.01)
 
         self.new_pod.delete()
         self.status_data.update({"object": self.new_pod})
@@ -103,6 +110,8 @@ class TestPodProcessing(unittest.TestCase):
 
         assert self.status_data.status_data[release].get("status") == "Created"
 
+        time.sleep(0.01)
+
         self.pod.running()
         self.status_data.update({"object": self.pod})
         assert self.status_data.status_data[release].get("status") == "Running"
@@ -110,6 +119,9 @@ class TestPodProcessing(unittest.TestCase):
         # Pod: invalid_pod
         self.invalid_pod = Pod()
         self.invalid_pod.create(release)
+
+        time.sleep(0.01)
+
         self.invalid_pod.error_image_pull()
         self.status_data.update({"object": self.invalid_pod})
         assert self.status_data.status_data[release].get("status") == "Image Error"
@@ -119,6 +131,9 @@ class TestPodProcessing(unittest.TestCase):
         # Pod: valid_pod
         self.valid_pod = Pod()
         self.valid_pod.create(release)
+
+        time.sleep(0.01)
+
         self.valid_pod.running()
         self.status_data.update({"object": self.valid_pod})
         assert self.status_data.status_data[release].get("status") == "Running"
