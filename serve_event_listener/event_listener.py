@@ -77,10 +77,11 @@ class EventListener:
             "\n\n\t{}\n\t   Running Setup Process \n\t{}\n".format("#" * 30, "#" * 30)
         )
         try:
-            self.check_status()
+            self.check_serve_api_status()
             self.setup_client()
             self.token = self.fetch_token()
             self._status_data = StatusData()
+            self._status_data.set_k8s_api_client(self.client, self.namespace)
             self._status_queue = StatusQueue(self.post, self.token)
             self.setup_complete = True
         except Exception as e:
@@ -99,6 +100,8 @@ class EventListener:
         )
 
         max_retries = 10
+
+        # Duration in seconds to wait between retrying used when some exceptions occur
         retry_delay = 2
 
         if self.setup_complete:
@@ -147,9 +150,9 @@ class EventListener:
         else:
             logger.warning("Setup not completed - run .setup() first")
 
-    def check_status(self) -> bool:
+    def check_serve_api_status(self) -> bool:
         """
-        Checks the status of the EventListener.
+        Checks the status of the Serve API.
 
         Returns:
         - bool: True if the status is okay, False otherwise.
@@ -185,7 +188,29 @@ class EventListener:
 
         logger.info("Kubernetes client successfully set")
         self.client = client.CoreV1Api()
+
+        # self.list_all_pods()
+
         self.watch = watch.Watch()
+
+    def list_all_pods(self):
+        logger.info("Listing all pods and their status codes")
+
+        try:
+            api_response = self.client.list_namespaced_pod(
+                self.namespace, limit=500, timeout_seconds=120, watch=False
+            )
+
+            for pod in api_response.items:
+                release = pod.metadata.labels.get("release")
+                app_status = StatusData.determine_status_from_k8s(pod.status)
+                logger.info(
+                    f"Release={release}, {pod.metadata.name} with status {app_status}"
+                )
+        except ApiException as e:
+            logger.warning(
+                f"Exception when calling CoreV1Api->list_namespaced_pod. {e}"
+            )
 
     def fetch_token(self):
         """
@@ -251,7 +276,7 @@ class EventListener:
 
                 elif status_code in [401, 403]:
                     logger.warning(
-                        f"Recieved status code {status_code} - Fetching new token and retrying once"
+                        f"Received status code {status_code} - Fetching new token and retrying once"
                     )
                     self.token = self.fetch_token()
                     self._status_queue.token = self.token
@@ -263,17 +288,17 @@ class EventListener:
 
                 elif status_code in [404]:
                     logger.warning(
-                        f"Recieved status code {status_code} - {response.text}"
+                        f"Received status code {status_code} - {response.text}"
                     )
                     break
 
                 elif str(status_code).startswith("5"):
-                    logger.warning(f"Recieved status code {status_code}")
+                    logger.warning(f"Received status code {status_code}")
                     logger.warning(f"Retrying in {sleep} seconds")
                     time.sleep(sleep)
 
                 else:
-                    logger.warning(f"Recieved uncaught status code: {status_code}")
+                    logger.warning(f"Received uncaught status code: {status_code}")
 
             logger.info(f"POST returned - Status code: {status_code}")
 
@@ -289,10 +314,10 @@ class EventListener:
 
     def get(self, url: str, headers: Union[None, dict] = None):
         """
-        Send a POST request to the specified URL with the provided data and token.
+        Send a GET request to the specified URL with the provided data and token.
 
         Args:
-            url (str): The URL to send the POST request to.
+            url (str): The URL to send the GET request to.
             data (dict): The data to be included in the POST request.
             header (None or dict): header for the request.
 

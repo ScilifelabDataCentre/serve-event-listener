@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [ "develop" ]
+    paths-ignore:
+      - '**.md'
+
+
+  # Adds ability to run this workflow manually
+  workflow_dispatch:
+
+
+jobs:
+
+  lint:
+    name: Run linting
+    runs-on: ubuntu-latest
+    env:
+        HADOLINT_RECURSIVE: "true"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run linter black
+        uses: psf/black@stable
+        with:
+          options: "--check"
+
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: "Dockerfile*"
+
+
+  tests:
+    name: Run unit-tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: [3.12]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+            python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests
+
+
+  build:
+    name: Build a CI image
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build the Docker image
+      run: docker build . --file Dockerfile --tag ci:$(date +%s)

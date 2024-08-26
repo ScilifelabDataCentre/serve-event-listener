@@ -151,6 +151,12 @@ node_modules
 .DS_Store
 .idea/
 
+# VSCode configurations
+.vscode
+
 # The media folder contents
 media/*
 !media/.gitkeep
+
+# Local only files
+.local-only/

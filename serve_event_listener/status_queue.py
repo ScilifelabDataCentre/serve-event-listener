@@ -26,7 +26,15 @@ class StatusQueue:
     def process(self):
         while not self.stop_event.is_set():
             try:
-                status_data = self.queue.get(timeout=2)  # Wait for 1 second
+                status_data = self.queue.get(timeout=2)  # Wait for 2 seconds
+
+                release = status_data["release"]
+                new_status = status_data["new-status"]
+
+                if new_status == "Deleted":
+                    logger.info(
+                        f"Processing release: {release}. New status is Deleted!"
+                    )
 
                 self.post_handler(
                     data=status_data,
@@ -35,7 +43,9 @@ class StatusQueue:
 
                 self.queue.task_done()
 
-                logger.debug("Processing queue successfully")
+                logger.debug(
+                    f"Processed queue successfully of release {release}, new status={new_status}"
+                )
             except queue.Empty:
                 pass  # Continue looping if the queue is empty
 
