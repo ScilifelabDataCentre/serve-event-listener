@@ -185,21 +185,27 @@ class StatusData:
         - status_data (dict): Updated dictionary containing status info.
         - release (str): The release of the updated status
         """
-        logger.debug("Event triggered update_status_data")
-
         pod = event.get("object", None)
 
         # TODO: Try catch here instead
         if pod:
+            release = pod.metadata.labels.get("release")
+
+            logger.info(
+                f"--- Event triggered update status data from release {release}"
+            )
+
             status_object = pod.status
 
             status, container_message, pod_message = (
                 StatusData.determine_status_from_k8s(status_object)
             )
-            release = pod.metadata.labels.get("release")
 
-            logger.debug(f"Event triggered from release {release}")
-            logger.debug(f"Status: {status} - Message: {container_message}")
+            logger.debug(
+                f"Pod status converted to AppStatus={status}, \
+                         ContMessage:{container_message}, \
+                         PodMessage:{pod_message}"
+            )
 
             creation_timestamp = pod.metadata.creation_timestamp
             deletion_timestamp = pod.metadata.deletion_timestamp
@@ -268,14 +274,21 @@ class StatusData:
             Dict: Updated status data.
         """
 
+        log_msg = ""
+        if release in status_data:
+            log_msg = f"Status data before update:{status_data[release]}"
+        else:
+            log_msg = "Release not in status_data. Adding now."
+
         logger.debug(
-            f"Release {release}. Status data before update:{status_data}. \
-                     {(release in status_data)=}? \
+            f"Release {release}. {log_msg} \
                     creation_timestamp={creation_timestamp}, deletion_timestamp={deletion_timestamp}"
         )
+
         if (
             release not in status_data
             or creation_timestamp >= status_data[release]["creation_timestamp"]
+            or deletion_timestamp is not None
         ):
 
             status = "Deleted" if deletion_timestamp else status
