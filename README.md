@@ -21,6 +21,13 @@ export TOKEN_API_ENDPOINT=<end point for fetching token> (optional, is set to BA
 export APP_STATUS_API_ENDPOINT=<end point for status updates> (optional, is set to BASE_URL + "/api/v1/app-status/" if not defined)
 ```
 
+To retrieve additional log messages, set:
+
+```bash
+export DEBUG=True
+export TEST_LOG_STREAM=sys.stdout
+```
+
 ### Running the Service
 Navigate to the project directory and execute the following command to run the service:
 

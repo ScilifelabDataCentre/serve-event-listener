@@ -283,14 +283,19 @@ class StatusData:
             if status == "Deleted":
                 # Status Deleted is a destructive action
                 # Therefore we double-check the k8s status directly upon detecting this
+                if self.k8s_api_client is None:
+                    logger.warning("No k8s API client: k8s_api_client is None")
+
                 if self.k8s_api_client:
                     # Only use if the k8s client api has been set
                     # Unit tests for example do not currently set a k8s api
                     status, *_ = self.fetch_status_from_k8s_api(release)
+                    logger.debug(f"Fetched release status from k8s: {status}")
 
                     if status is None:
                         # No pod with this release found. Set status to Deleted
                         status = "Deleted"
+                        logger.info("k8s returned status None. Setting to Deleted")
 
                     if status != "Deleted":
                         deletion_timestamp = None
