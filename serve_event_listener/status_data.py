@@ -122,10 +122,16 @@ class StatusData:
         self.k8s_api_client = k8s_api_client
         self.namespace = namespace
 
-    def fetch_status_from_k8s_api(self, release: str) -> Tuple[str, str, str]:
+    def fetch_status_from_k8s_api(
+        self, release: str, response_limit: int = 1000
+    ) -> Tuple[str, str, str]:
         """
         Get the actual status of a release from k8s via the client API.
         Because this can be as costly operation it is only used at critical times such as deleted pods.
+
+        Parameters:
+        - release (str): The release
+        - response_limit (int): The maximum number of objects to return from the k8s API call.
 
         Returns:
         - Tuple[str, str, str]: The status of the pod, container message, pod message
@@ -141,7 +147,7 @@ class StatusData:
 
         try:
             api_response = self.k8s_api_client.list_namespaced_pod(
-                self.namespace, limit=500, timeout_seconds=120, watch=False
+                self.namespace, limit=response_limit, timeout_seconds=120, watch=False
             )
 
             for pod in api_response.items:
