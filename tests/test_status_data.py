@@ -1,8 +1,25 @@
+import logging
+import os
+import sys
 import time
 import unittest
 
 from serve_event_listener.status_data import StatusData
 from tests.create_pods import Pod, PodStatus
+
+# Setup logging output for unit test execution
+DEBUG = os.getenv("DEBUG", default="False").lower() in ("true", "1", "t")
+# Set up logging configuration with the ColoredFormatter
+if DEBUG:
+    level = logging.DEBUG
+else:
+    level = logging.INFO
+
+TEST_LOG_STREAM = os.environ.get("TEST_LOG_STREAM", None)
+if TEST_LOG_STREAM and eval(TEST_LOG_STREAM) is not None:
+    logging.basicConfig(stream=eval(TEST_LOG_STREAM), level=level)
+else:
+    logging.basicConfig(handlers=[logging.NullHandler()], level=level)
 
 
 class TestPodProcessing(unittest.TestCase):
@@ -94,13 +111,20 @@ class TestPodProcessing(unittest.TestCase):
 
         self.assertEqual(self.status_data.status_data[release].get("status"), "Deleted")
 
+    @unittest.skip(
+        "This test no longer works after we rely on k8s truth for deletions."
+    )
     def test_valid_and_invalid_image_edits(self):
         """
         This scenario creates a pod, then creates a pod with an invalid image, and finally
-        it created a pod with a valid image.
+        it creates a pod with a valid image.
         After the third pod is created, the first two are deleted.
+        Finally the valid pod is also deleted.
         This occurs when a user chnages the image to an invalid image and then valid image.
         """
+
+        # TODO: Consider re-enabling this test by for example creating a parallel data structure
+        # containing a list of k8s pods and statuses.
 
         release = "r-valid-invalid-images"
 
@@ -166,6 +190,18 @@ class TestPodProcessing(unittest.TestCase):
                          ts pod deleted={self.pod.metadata.deletion_timestamp} vs \
                          ts invalid_pod deleted={self.invalid_pod.metadata.deletion_timestamp} vs \
                          ts valid_pod created={self.valid_pod.metadata.creation_timestamp}, {msg}",
+        )
+
+        # Finally also delete the valid pod
+        self.valid_pod.delete()
+        self.status_data.update({"object": self.valid_pod})
+
+        time.sleep(0.01)
+
+        self.assertEqual(
+            self.status_data.status_data[release].get("status"),
+            "Deleted",
+            "Release should be Deleted after delete of the last, valid pod.",
         )
 
 

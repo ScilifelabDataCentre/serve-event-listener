@@ -24,6 +24,8 @@ class StatusQueue:
         self.queue.put(status_data)
 
     def process(self):
+        log_cnt_q_is_empty = 0
+
         while not self.stop_event.is_set():
             try:
                 status_data = self.queue.get(timeout=2)  # Wait for 2 seconds
@@ -46,8 +48,16 @@ class StatusQueue:
                 logger.debug(
                     f"Processed queue successfully of release {release}, new status={new_status}"
                 )
+                log_cnt_q_is_empty = 0
             except queue.Empty:
-                pass  # Continue looping if the queue is empty
+                if log_cnt_q_is_empty <= 2:
+                    logger.debug("Nothing to do. The queue is empty.")
+                elif log_cnt_q_is_empty == 3:
+                    logger.debug(
+                        "Nothing to do. The queue is empty. Suppressing this message for now."
+                    )
+                log_cnt_q_is_empty += 1
+                # pass  # Continue looping if the queue is empty
 
     def stop_processing(self):
         logger.warning("Queue processing stopped")

@@ -122,10 +122,16 @@ class StatusData:
         self.k8s_api_client = k8s_api_client
         self.namespace = namespace
 
-    def fetch_status_from_k8s_api(self, release: str) -> Tuple[str, str, str]:
+    def fetch_status_from_k8s_api(
+        self, release: str, response_limit: int = 1000
+    ) -> Tuple[str, str, str]:
         """
         Get the actual status of a release from k8s via the client API.
         Because this can be as costly operation it is only used at critical times such as deleted pods.
+
+        Parameters:
+        - release (str): The release
+        - response_limit (int): The maximum number of objects to return from the k8s API call.
 
         Returns:
         - Tuple[str, str, str]: The status of the pod, container message, pod message
@@ -141,7 +147,7 @@ class StatusData:
 
         try:
             api_response = self.k8s_api_client.list_namespaced_pod(
-                self.namespace, limit=500, timeout_seconds=120, watch=False
+                self.namespace, limit=response_limit, timeout_seconds=120, watch=False
             )
 
             for pod in api_response.items:
@@ -185,21 +191,27 @@ class StatusData:
         - status_data (dict): Updated dictionary containing status info.
         - release (str): The release of the updated status
         """
-        logger.debug("Event triggered update_status_data")
-
         pod = event.get("object", None)
 
         # TODO: Try catch here instead
         if pod:
+            release = pod.metadata.labels.get("release")
+
+            logger.info(
+                f"--- Event triggered update status data from release {release}"
+            )
+
             status_object = pod.status
 
             status, container_message, pod_message = (
                 StatusData.determine_status_from_k8s(status_object)
             )
-            release = pod.metadata.labels.get("release")
 
-            logger.debug(f"Event triggered from release {release}")
-            logger.debug(f"Status: {status} - Message: {container_message}")
+            logger.debug(
+                f"Pod status converted to AppStatus={status}, \
+                         ContMessage:{container_message}, \
+                         PodMessage:{pod_message}"
+            )
 
             creation_timestamp = pod.metadata.creation_timestamp
             deletion_timestamp = pod.metadata.deletion_timestamp
@@ -268,14 +280,21 @@ class StatusData:
             Dict: Updated status data.
         """
 
+        log_msg = ""
+        if release in status_data:
+            log_msg = f"Status data before update:{status_data[release]}"
+        else:
+            log_msg = "Release not in status_data. Adding now."
+
         logger.debug(
-            f"Release {release}. Status data before update:{status_data}. \
-                     {(release in status_data)=}? \
+            f"Release {release}. {log_msg} \
                     creation_timestamp={creation_timestamp}, deletion_timestamp={deletion_timestamp}"
         )
+
         if (
             release not in status_data
             or creation_timestamp >= status_data[release]["creation_timestamp"]
+            or deletion_timestamp is not None
         ):
 
             status = "Deleted" if deletion_timestamp else status
@@ -283,14 +302,19 @@ class StatusData:
             if status == "Deleted":
                 # Status Deleted is a destructive action
                 # Therefore we double-check the k8s status directly upon detecting this
+                if self.k8s_api_client is None:
+                    logger.warning("No k8s API client: k8s_api_client is None")
+
                 if self.k8s_api_client:
                     # Only use if the k8s client api has been set
                     # Unit tests for example do not currently set a k8s api
                     status, *_ = self.fetch_status_from_k8s_api(release)
+                    logger.debug(f"Fetched release status from k8s: {status}")
 
                     if status is None:
                         # No pod with this release found. Set status to Deleted
                         status = "Deleted"
+                        logger.info("k8s returned status None. Setting to Deleted")
 
                     if status != "Deleted":
                         deletion_timestamp = None
