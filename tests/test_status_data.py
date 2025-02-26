@@ -49,12 +49,17 @@ class TestPodProcessing(unittest.TestCase):
         assert (
             self.status_data.status_data[release].get("status") == "ContainerCreating"
         )  # before: Created
+
+        time.sleep(0.01)
+
         self.pod.delete()
 
         event = {"object": self.pod}
         self.status_data.update(event)
 
-        assert self.status_data.status_data[release].get("status") == "Deleted"
+        assert (
+            self.status_data.status_data[release].get("status") == "Terminated"
+        )  # before: Deleted
 
     def test_pod_running(self):
         release = "r1234567"
@@ -119,7 +124,9 @@ class TestPodProcessing(unittest.TestCase):
         self.new_pod.delete()
         self.status_data.update({"object": self.new_pod})
 
-        self.assertEqual(self.status_data.status_data[release].get("status"), "Deleted")
+        self.assertEqual(
+            self.status_data.status_data[release].get("status"), "Terminated"
+        )  # before: Deleted
 
     @unittest.skip(
         "This test no longer works after we rely on k8s truth for deletions."
@@ -130,7 +137,7 @@ class TestPodProcessing(unittest.TestCase):
         it creates a pod with a valid image.
         After the third pod is created, the first two are deleted.
         Finally the valid pod is also deleted.
-        This occurs when a user chnages the image to an invalid image and then valid image.
+        This occurs when a user changes the image to an invalid image and then valid image.
         """
 
         # TODO: Consider re-enabling this test by for example creating a parallel data structure
@@ -142,7 +149,9 @@ class TestPodProcessing(unittest.TestCase):
         self.pod.create(release)
         self.status_data.update({"object": self.pod})
 
-        assert self.status_data.status_data[release].get("status") == "Created"
+        assert (
+            self.status_data.status_data[release].get("status") == "ContainerCreating"
+        )
 
         time.sleep(0.01)
 
