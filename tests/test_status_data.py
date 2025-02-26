@@ -35,7 +35,9 @@ class TestPodProcessing(unittest.TestCase):
         event = {"object": self.pod}
         self.status_data.update(event)
 
-        assert self.status_data.status_data[release].get("status") == "Created"
+        assert (
+            self.status_data.status_data[release].get("status") == "ContainerCreating"
+        )  # before: Created
 
     def test_pod_delete(self):
         release = "r1234567"
@@ -44,7 +46,9 @@ class TestPodProcessing(unittest.TestCase):
         event = {"object": self.pod}
         self.status_data.update(event)
 
-        assert self.status_data.status_data[release].get("status") == "Created"
+        assert (
+            self.status_data.status_data[release].get("status") == "ContainerCreating"
+        )  # before: Created
         self.pod.delete()
 
         event = {"object": self.pod}
@@ -58,7 +62,9 @@ class TestPodProcessing(unittest.TestCase):
         self.pod.create(release)
         self.status_data.update({"object": self.pod})
 
-        assert self.status_data.status_data[release].get("status") == "Created"
+        assert (
+            self.status_data.status_data[release].get("status") == "ContainerCreating"
+        )  # before: Created
 
         self.pod.running()
         self.status_data.update({"object": self.pod})
@@ -69,12 +75,16 @@ class TestPodProcessing(unittest.TestCase):
 
         self.pod.create(release)
         self.status_data.update({"object": self.pod})
-        self.assertEqual(self.status_data.status_data[release].get("status"), "Created")
+        self.assertEqual(
+            self.status_data.status_data[release].get("status"), "ContainerCreating"
+        )  # before: Created
 
         self.pod.error_image_pull()
         self.status_data.update({"object": self.pod})
         self.assertEqual(
-            self.status_data.status_data[release].get("status"), "Image Error"
+            # self.status_data.status_data[release].get("status"), "Image Error"
+            self.status_data.status_data[release].get("status"),
+            "ErrImagePull",
         )
 
     def test_replica_scenario(self):
@@ -148,9 +158,11 @@ class TestPodProcessing(unittest.TestCase):
 
         self.invalid_pod.error_image_pull()
         self.status_data.update({"object": self.invalid_pod})
-        assert self.status_data.status_data[release].get("status") == "Image Error"
+        assert (
+            self.status_data.status_data[release].get("status") == "ErrImagePull"
+        )  # before: Image Error
 
-        # Now there are two pods in the release, one older Running and one newer Image Error
+        # Now there are two pods in the release, one older Running and one newer with ErrImagePull
 
         # Pod: valid_pod
         self.valid_pod = Pod()
@@ -220,7 +232,7 @@ class TestStatusConverter(unittest.TestCase):
         """
         podstatus = PodStatus()
         podstatus.add_container_status("waiting", "PodInitializing")
-        expected = ("Pending", "", "")
+        expected = ("PodInitializing", "", "")  # changed from Pending
         actual = StatusData.determine_status_from_k8s(podstatus)
         self.assertEqual(actual, expected)
 
@@ -270,7 +282,7 @@ class TestStatusConverter(unittest.TestCase):
         podstatus.add_init_container_status(
             "terminated", "PostStartHookError", exit_code=137
         )
-        expected = ("Pod Error", "", "")
+        expected = ("PostStartHookError", "", "")  # before: Pod Error
         actual = StatusData.determine_status_from_k8s(podstatus)
         self.assertEqual(actual, expected)
 
@@ -281,7 +293,7 @@ class TestStatusConverter(unittest.TestCase):
         """
         podstatus = PodStatus()
         podstatus.add_init_container_status("waiting", "PostStartHookError")
-        expected = ("Pod Error", "", "")
+        expected = ("PostStartHookError", "", "")  # before: Pod Error
         actual = StatusData.determine_status_from_k8s(podstatus)
         self.assertEqual(actual, expected)
 

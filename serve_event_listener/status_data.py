@@ -14,6 +14,7 @@ USERNAME = os.environ.get("USERNAME", None)
 PASSWORD = os.environ.get("PASSWORD", None)
 KUBECONFIG = os.environ.get("KUBECONFIG", None)
 
+# Note: The k8s status map is not used unless translation mapping is enabled
 K8S_STATUS_MAP = {
     "CrashLoopBackOff": "Error",
     "Completed": "Retrying...",
@@ -32,7 +33,9 @@ class StatusData:
         self.namespace = "default"
 
     @staticmethod
-    def determine_status_from_k8s(status_object: V1PodStatus) -> Tuple[str, str, str]:
+    def determine_status_from_k8s(
+        status_object: V1PodStatus, translate_status: bool = False
+    ) -> Tuple[str, str, str]:
         """
         Get the status of a Kubernetes pod.
         First checks init_container_statuses, then container_statuses
@@ -44,6 +47,7 @@ class StatusData:
 
         Parameters:
         - status_object (dict): The Kubernetes status object.
+        - translate_status (bool): A boolean value indicating whether to translate the status values to the map.
 
         Returns:
         - Tuple[str, str, str]: The status of the pod, container message, pod message
@@ -61,7 +65,11 @@ class StatusData:
                         break
                     else:
                         return (
-                            StatusData.get_mapped_status(terminated.reason),
+                            (
+                                StatusData.get_mapped_status(terminated.reason)
+                                if translate_status
+                                else terminated.reason
+                            ),
                             terminated.message if terminated.message else empty_message,
                             pod_message,
                         )
@@ -70,7 +78,11 @@ class StatusData:
 
                 if waiting:
                     return (
-                        StatusData.get_mapped_status(waiting.reason),
+                        (
+                            StatusData.get_mapped_status(waiting.reason)
+                            if translate_status
+                            else waiting.reason
+                        ),
                         waiting.message if waiting.message else empty_message,
                         pod_message,
                     )
