@@ -154,8 +154,8 @@ class StatusData:
             f"Getting the nr of pods in release {release} directly from k8s via the api client"
         )
 
+        """
         apps_v1 = client.AppsV1Api()
-
         deployments = apps_v1.list_namespaced_deployment(
             namespace=self.namespace, label_selector=f"release={release}"
         )
@@ -166,10 +166,12 @@ class StatusData:
         # Assume the first deployment is the one we are interested in
         deployment = deployments.items[0]
         deployment_name = deployment.metadata.name
+        """
 
         pods = self.k8s_api_client.list_namespaced_pod(
             namespace=self.namespace,
-            label_selector=f"app={deployment_name}",
+            # label_selector=f"app={deployment_name}",
+            label_selector=f"app={release}",
             limit=response_limit,
             timeout_seconds=120,
             watch=False,
@@ -374,10 +376,15 @@ class StatusData:
                             release
                         )
                         logger.debug(
-                            f"Fetched {len(pod_phases)} for release {release} from k8s"
+                            f"Fetched {len(pod_phases)} pod phases for release {release} from k8s"
                         )
 
-                        if len(pod_phases) <= 1:
+                        for phase in pod_phases:
+                            if phase == "Running":
+                                status = "Running"
+                                break
+
+                        if status != "Running" and len(pod_phases) <= 1:
                             # There are no other pods in this release. Set status to Deleted
                             status = "Deleted"
 
