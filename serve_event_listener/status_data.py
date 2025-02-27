@@ -369,7 +369,7 @@ class StatusData:
                     if self.k8s_api_client is None:
                         logger.warning("No k8s API client: k8s_api_client is None")
 
-                    if self.k8s_api_client:
+                    else:
                         # Only use if the k8s client api has been set
                         # Unit tests for example do not currently set a k8s api
                         pod_phases = self.fetch_pod_phases_in_release_from_k8s_api(

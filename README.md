@@ -4,7 +4,7 @@ The Kubernetes Event Listener by Serve is a service designed to monitor changes 
 
 ## Development
 
-This repository uses two branches: main and develop. Develop in branch develop, then create a PR to merge develop into the main branch. To release a new version of the event-listener, first tag the latest commit. When the tag is pushed to origin, a github action is run automatically and publishes a new package called event-listener.
+This repository uses two branches: main and develop. Develop in branch develop, then create a PR to merge develop into the main branch. To release a new version of the event-listener, first tag the latest commit. When the tag is pushed to origin, a github action is run automatically and publishes a new package which is a docker image called event-listener.
 
 ## Host Machine Setup
 
