@@ -3,7 +3,6 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Tuple, Union
 
-import requests
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 from kubernetes.client.models import V1PodStatus
@@ -14,6 +13,7 @@ USERNAME = os.environ.get("USERNAME", None)
 PASSWORD = os.environ.get("PASSWORD", None)
 KUBECONFIG = os.environ.get("KUBECONFIG", None)
 
+# Note: The k8s status map is not used unless translation mapping is enabled
 K8S_STATUS_MAP = {
     "CrashLoopBackOff": "Error",
     "Completed": "Retrying...",
@@ -32,7 +32,9 @@ class StatusData:
         self.namespace = "default"
 
     @staticmethod
-    def determine_status_from_k8s(status_object: V1PodStatus) -> Tuple[str, str, str]:
+    def determine_status_from_k8s(
+        status_object: V1PodStatus, translate_status: bool = False
+    ) -> Tuple[str, str, str]:
         """
         Get the status of a Kubernetes pod.
         First checks init_container_statuses, then container_statuses
@@ -44,6 +46,7 @@ class StatusData:
 
         Parameters:
         - status_object (dict): The Kubernetes status object.
+        - translate_status (bool): A boolean value indicating whether to translate the status values to the map.
 
         Returns:
         - Tuple[str, str, str]: The status of the pod, container message, pod message
@@ -61,7 +64,11 @@ class StatusData:
                         break
                     else:
                         return (
-                            StatusData.get_mapped_status(terminated.reason),
+                            (
+                                StatusData.get_mapped_status(terminated.reason)
+                                if translate_status
+                                else terminated.reason
+                            ),
                             terminated.message if terminated.message else empty_message,
                             pod_message,
                         )
@@ -70,7 +77,11 @@ class StatusData:
 
                 if waiting:
                     return (
-                        StatusData.get_mapped_status(waiting.reason),
+                        (
+                            StatusData.get_mapped_status(waiting.reason)
+                            if translate_status
+                            else waiting.reason
+                        ),
                         waiting.message if waiting.message else empty_message,
                         pod_message,
                     )
@@ -121,6 +132,43 @@ class StatusData:
     def set_k8s_api_client(self, k8s_api_client: client.CoreV1Api, namespace: str):
         self.k8s_api_client = k8s_api_client
         self.namespace = namespace
+
+    def fetch_pod_phases_in_release_from_k8s_api(
+        self, release: str, response_limit: int = 1000
+    ) -> list[str]:
+        """
+        Get the actual pod phases of the pods in the release from k8s via the client API.
+        Because this can be as costly operation it is only used at critical times such as deleted pods.
+
+        Parameters:
+        - release (str): The release
+
+        Returns:
+        - list[str]: A list of pod phases
+        - response_limit (int): The maximum number of objects to return from the k8s API call.
+
+        If no pod matches the release, then returns empty list.
+        """
+        logger.debug(
+            f"Getting the nr of pods in release {release} directly from k8s via the api client"
+        )
+
+        # Using label_selector with app=release because no pods were selected using the
+        # app=deployment_name
+        pods = self.k8s_api_client.list_namespaced_pod(
+            namespace=self.namespace,
+            # label_selector=f"app={deployment_name}",
+            label_selector=f"app={release}",
+            limit=response_limit,
+            timeout_seconds=120,
+            watch=False,
+        )
+
+        phases = []
+        for pod in pods.items:
+            phases.append(pod.status.phase)
+
+        return phases
 
     def fetch_status_from_k8s_api(
         self, release: str, response_limit: int = 1000
@@ -297,27 +345,38 @@ class StatusData:
             or deletion_timestamp is not None
         ):
 
-            status = "Deleted" if deletion_timestamp else status
+            if deletion_timestamp is not None:
+                # Status Deleted may be be a disruptive event to send to the client app
+                # Therefore we double check if there are other pods in the release
+                if (
+                    deletion_timestamp > status_data[release]["creation_timestamp"]
+                    or creation_timestamp is not None
+                    and deletion_timestamp > creation_timestamp
+                ):
+                    if self.k8s_api_client is None:
+                        logger.warning("No k8s API client: k8s_api_client is None")
 
-            if status == "Deleted":
-                # Status Deleted is a destructive action
-                # Therefore we double-check the k8s status directly upon detecting this
-                if self.k8s_api_client is None:
-                    logger.warning("No k8s API client: k8s_api_client is None")
+                    else:
+                        # Only use if the k8s client api has been set
+                        # Unit tests for example do not currently set a k8s api
+                        pod_phases = self.fetch_pod_phases_in_release_from_k8s_api(
+                            release
+                        )
+                        logger.debug(
+                            f"Fetched {len(pod_phases)} pod phases for release {release} from k8s"
+                        )
 
-                if self.k8s_api_client:
-                    # Only use if the k8s client api has been set
-                    # Unit tests for example do not currently set a k8s api
-                    status, *_ = self.fetch_status_from_k8s_api(release)
-                    logger.debug(f"Fetched release status from k8s: {status}")
+                        for phase in pod_phases:
+                            if phase == "Running":
+                                status = "Running"
+                                break
 
-                    if status is None:
-                        # No pod with this release found. Set status to Deleted
-                        status = "Deleted"
-                        logger.info("k8s returned status None. Setting to Deleted")
+                        if status != "Running" and len(pod_phases) <= 1:
+                            # There are no other pods in this release. Set status to Deleted
+                            status = "Deleted"
 
-                    if status != "Deleted":
-                        deletion_timestamp = None
+                if status != "Deleted":
+                    deletion_timestamp = None
 
             status_data[release] = {
                 "creation_timestamp": creation_timestamp,

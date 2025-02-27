@@ -1,6 +1,10 @@
-# Serve Event Listener
+# Kubernetes Event Listener by Serve
 
-The Serve Event Listener is a service designed to monitor changes in Kubernetes and automatically update corresponding `AppInstance` and `AppStatus` objects in the Serve platform. This README provides detailed instructions on how to run the service on both a host machine and within a Docker container.
+The Kubernetes Event Listener by Serve is a service designed to monitor changes in Kubernetes and automatically send the latest information to another application for processing. This README provides detailed instructions on how to run the service on both a host machine and within a Docker container.
+
+## Development
+
+This repository uses two branches: main and develop. Develop in branch develop, then create a PR to merge develop into the main branch. To release a new version of the event-listener, first tag the latest commit. When the tag is pushed to origin, a github action is run automatically and publishes a new package which is a docker image called event-listener.
 
 ## Host Machine Setup
 
@@ -14,11 +18,11 @@ Set the `KUBECONFIG` environment variable to point to your Kubernetes cluster co
 
 ```bash
 export KUBECONFIG=/path/to/cluster.conf
-export USERNAME=<serve admin username>
-export PASSWORD=<serve admin password>
-export BASE_URL=<serve URL (no trailing slash)>
+export BASE_URL=<Retriever URL (Serve) (no trailing slash)>
 export TOKEN_API_ENDPOINT=<end point for fetching token> (optional, is set to BASE_URL + "/api/v1/token-auth/" if not defined)
 export APP_STATUS_API_ENDPOINT=<end point for status updates> (optional, is set to BASE_URL + "/api/v1/app-status/" if not defined)
+export USERNAME=<admin username (Serve)>
+export PASSWORD=<admin password (Serve)>
 ```
 
 To retrieve additional log messages, set:
