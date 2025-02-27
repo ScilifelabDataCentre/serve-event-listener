@@ -3,7 +3,6 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Tuple, Union
 
-import requests
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 from kubernetes.client.models import V1PodStatus
@@ -154,20 +153,8 @@ class StatusData:
             f"Getting the nr of pods in release {release} directly from k8s via the api client"
         )
 
-        """
-        apps_v1 = client.AppsV1Api()
-        deployments = apps_v1.list_namespaced_deployment(
-            namespace=self.namespace, label_selector=f"release={release}"
-        )
-
-        if not deployments.items:
-            return []
-
-        # Assume the first deployment is the one we are interested in
-        deployment = deployments.items[0]
-        deployment_name = deployment.metadata.name
-        """
-
+        # Using label_selector with app=release because no pods were selected using the
+        # app=deployment_name
         pods = self.k8s_api_client.list_namespaced_pod(
             namespace=self.namespace,
             # label_selector=f"app={deployment_name}",
