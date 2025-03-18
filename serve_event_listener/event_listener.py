@@ -10,6 +10,7 @@ from kubernetes import client, config, watch
 from kubernetes.client.exceptions import ApiException
 from status_data import StatusData
 from status_queue import StatusQueue
+from urllib3.exceptions import HTTPError
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,12 @@ class EventListener:
             "\n\n\t{}\n\t   Running Setup Process \n\t{}\n".format("#" * 30, "#" * 30)
         )
         try:
-            self.check_serve_api_status()
+            if not self.check_serve_api_status():
+                logger.error(
+                    "Unable to start the event listener service. The receiving API did not respond."
+                )
+                return
+
             self.setup_client()
             self.token = self.fetch_token()
             self._status_data = StatusData()
@@ -102,7 +108,7 @@ class EventListener:
         max_retries = 10
 
         # Duration in seconds to wait between retrying used when some exceptions occur
-        retry_delay = 2
+        retry_delay = 3
 
         if self.setup_complete:
             # Start queue in a separate thread
@@ -134,9 +140,38 @@ class EventListener:
 
                 except ApiException as e:
                     logger.error(f"ApiException occurred: {e!r}")
+                    logger.error(
+                        f"ApiException details: {e.status}, {e.body}, {e.headers}"
+                    )
+
+                    if e.status == 410:
+                        logger.warning(
+                            "Watch closed due to outdated resource version. Re-establishing watch."
+                        )
+                    elif e.status in [401, 403]:
+                        logger.error("Authentication/Authorization error: %s" % e)
+                    elif 500 <= e.status < 600:
+                        logger.error("Server error: %s" % e)
+                    else:
+                        logger.error("Unexpected API exception: %s" % e)
+
                     logger.info(f"Retrying in {retry_delay} seconds...")
+
+                    # Enable more logging details from the urllib3 library
+                    urllib3.add_stderr_logger()
+
                     time.sleep(retry_delay)
                     retries += 1
+
+                except ValueError as e:
+                    # Handle value errors related to data processing
+                    logger.error("Value error: %s" % e)
+                    retries += 1
+
+                except (HTTPError, ConnectionError) as e:
+                    logger.error("Network-related error: %s" % e)
+                    # A longer delay
+                    time.sleep(5)
 
                 except Exception as e:
                     logger.error("Event listener exception occurred:")
@@ -158,7 +193,10 @@ class EventListener:
         - bool: True if the status is okay, False otherwise.
         """
         response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
-        if response.status_code == 200:
+
+        if response is None:
+            return False
+        elif response.status_code == 200:
             return True
         else:
             return False
