@@ -8,7 +8,7 @@ from serve_event_listener.status_data import StatusData
 from tests.create_pods import Pod, PodStatus
 
 # Setup logging output for unit test execution
-DEBUG = os.getenv("DEBUG", default="False").lower() in ("true", "1", "t")
+DEBUG = os.getenv("DEBUG", default="True").lower() in ("true", "1", "t")
 # Set up logging configuration with the ColoredFormatter
 if DEBUG:
     level = logging.DEBUG
