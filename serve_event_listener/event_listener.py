@@ -126,7 +126,9 @@ class EventListener:
                 try:
                     # Start fresh if no resourceVersion (initial run or after 410)
                     if not self.resource_version:
-                        self.resource_version = self.get_resource_version_from_pod_list()
+                        self.resource_version = (
+                            self.get_resource_version_from_pod_list()
+                        )
 
                     # Stream events with resource_version
                     # Use a timeout of 4 minutes to avoid staleness
@@ -138,7 +140,9 @@ class EventListener:
                         timeout_seconds=240,
                     ):
                         # Update resource_version to latest
-                        self.resource_version = event["object"].metadata.resource_version
+                        self.resource_version = event[
+                            "object"
+                        ].metadata.resource_version
 
                         # Update status_data_object with new event
                         self.status_data.update(event)
@@ -262,13 +266,16 @@ class EventListener:
 
     def list_all_pods(self) -> None:
         """
-        Lists all pods and logs their status. 
+        Lists all pods and logs their status.
         """
         logger.info("Listing all pods and their status codes")
 
         try:
             api_response = self.client.list_namespaced_pod(
-                namespace=self.namespace, limit=500, timeout_seconds=120, watch=False,
+                namespace=self.namespace,
+                limit=500,
+                timeout_seconds=120,
+                watch=False,
             )
 
             for pod in api_response.items:
