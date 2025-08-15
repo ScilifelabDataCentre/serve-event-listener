@@ -39,6 +39,12 @@ Navigate to the project directory and execute the following command to run the s
 python3 ./serve_event_listener/main.py --namespace <some-namespace> --label-selector <some label selector>
 ```
 
+### Running the unit tests
+
+```bash
+python -m unittest discover -s tests
+```
+
 ## Docker Container Setup
 
 ### Build the Docker Image
@@ -52,12 +58,12 @@ docker build -t <image name>:<image tag> .
 Run the Docker container with the mounted `cluster.conf` file and provide necessary environment variables:
 
 ```bash
-docker run --rm -v $PWD/cluster.conf:/home/serve/cluster.conf
-    --env KUBECONFIG=/home/serve/cluster.conf
-    --env USERNAME=admin@test.com
-    ...(set all env from above)
-     <image name>:<image tag>
-     --namespace <some-namespace>
+docker run --rm -v $PWD/cluster.conf:/home/serve/cluster.conf \
+    --env KUBECONFIG=/home/serve/cluster.conf \
+    --env USERNAME=admin@test.com \
+    ...(set all env from above) \
+     <image name>:<image tag> \
+     --namespace <some-namespace> \
      --label-selector <some label selector>
 ```
 
