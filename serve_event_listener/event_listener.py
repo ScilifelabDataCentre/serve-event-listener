@@ -47,6 +47,9 @@ class EventListener:
         self.label_selector = label_selector
         self.setup_complete = False
 
+        # Track the latest resourceVersion
+        self.resource_version = None
+
     @property
     def status_data_dict(self) -> dict:
         """
@@ -115,14 +118,32 @@ class EventListener:
             status_queue_thread = threading.Thread(target=self._status_queue.process)
             status_queue_thread.start()
 
+            # Enable more logging details from the urllib3 library, only once
+            urllib3.add_stderr_logger()
+
             retries = 0
             while retries < max_retries:
                 try:
+                    # Start fresh if no resourceVersion (initial run or after 410)
+                    if not self.resource_version:
+                        self.resource_version = (
+                            self.get_resource_version_from_pod_list()
+                        )
+
+                    # Stream events with resource_version
+                    # Use a timeout of 4 minutes to avoid staleness
                     for event in self.watch.stream(
                         self.client.list_namespaced_pod,
                         namespace=self.namespace,
                         label_selector=self.label_selector,
+                        resource_version=self.resource_version,
+                        timeout_seconds=240,
                     ):
+                        # Update resource_version to latest
+                        self.resource_version = event[
+                            "object"
+                        ].metadata.resource_version
+
                         # Update status_data_object with new event
                         self.status_data.update(event)
 
@@ -139,15 +160,18 @@ class EventListener:
                     retries += 1
 
                 except ApiException as e:
-                    logger.error(f"ApiException occurred: {e!r}")
-                    logger.error(
+                    logger.warning(f"ApiException occurred: {e!r}")
+                    logger.debug(
                         f"ApiException details: {e.status}, {e.body}, {e.headers}"
                     )
 
                     if e.status == 410:
+                        # 410 Gone
                         logger.warning(
                             "Watch closed due to outdated resource version. Re-establishing watch."
                         )
+                        # Force fresh start
+                        self.resource_version = None
                     elif e.status in [401, 403]:
                         logger.error("Authentication/Authorization error: %s" % e)
                     elif 500 <= e.status < 600:
@@ -156,9 +180,6 @@ class EventListener:
                         logger.error("Unexpected API exception: %s" % e)
 
                     logger.info(f"Retrying in {retry_delay} seconds...")
-
-                    # Enable more logging details from the urllib3 library
-                    urllib3.add_stderr_logger()
 
                     time.sleep(retry_delay)
                     retries += 1
@@ -231,12 +252,30 @@ class EventListener:
 
         self.watch = watch.Watch()
 
-    def list_all_pods(self):
+    def get_resource_version_from_pod_list(self) -> str:
+        """
+        Returns the resource version.
+        """
+        pods = self.client.list_namespaced_pod(
+            namespace=self.namespace,
+            timeout_seconds=120,
+            watch=False,
+        )
+        resource_version = pods.metadata.resource_version
+        return resource_version
+
+    def list_all_pods(self) -> None:
+        """
+        Lists all pods and logs their status.
+        """
         logger.info("Listing all pods and their status codes")
 
         try:
             api_response = self.client.list_namespaced_pod(
-                self.namespace, limit=500, timeout_seconds=120, watch=False
+                namespace=self.namespace,
+                limit=500,
+                timeout_seconds=120,
+                watch=False,
             )
 
             for pod in api_response.items:
@@ -250,7 +289,7 @@ class EventListener:
                 f"Exception when calling CoreV1Api->list_namespaced_pod. {e}"
             )
 
-    def fetch_token(self):
+    def fetch_token(self) -> str:
         """
         Retrieve an authentication token by sending a POST request with the provided data.
 
@@ -300,7 +339,7 @@ class EventListener:
         try:
             for sleep in [1, 2, 4]:
                 response = requests.post(
-                    url=url, json=data, headers=headers, verify=False, timeout=1
+                    url=url, json=data, headers=headers, verify=False, timeout=4
                 )
                 status_code = response.status_code
 
