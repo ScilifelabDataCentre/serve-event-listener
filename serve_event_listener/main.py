@@ -61,13 +61,11 @@ if __name__ == "__main__":
         "debug: {}\n\t"
         "{}\n"
     )
-    logger.info(start_message.format(
-        "#" * 40,
-        args.namespace,
-        args.label_selector,
-        DEBUG,
-        "#" * 40
-    ))
+    logger.info(
+        start_message.format(
+            "#" * 40, args.namespace, args.label_selector, DEBUG, "#" * 40
+        )
+    )
 
     event_listener = EventListener(args.namespace, args.label_selector)
     event_listener.setup()

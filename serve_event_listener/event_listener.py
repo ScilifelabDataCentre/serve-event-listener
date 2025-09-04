@@ -131,7 +131,9 @@ class EventListener:
                             self.get_resource_version_from_pod_list()
                         )
 
-                    logger.debug(f"Done getting resource version: {self.resource_version}")
+                    logger.debug(
+                        f"Done getting resource version: {self.resource_version}"
+                    )
                     # Stream events with resource_version
                     # Use a timeout of 4 minutes to avoid staleness
                     for event in self.watch.stream(
