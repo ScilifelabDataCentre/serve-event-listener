@@ -8,7 +8,7 @@ WORKDIR $HOME
 
 COPY requirements.txt .
 
-RUN apk add --no-cache curl \
+RUN apk add --no-cache curl=8.12.1-r0 \
     && pip install --no-cache-dir --upgrade "pip~=25.2" \
     && pip install --no-cache-dir -r requirements.txt \
     && rm requirements.txt
