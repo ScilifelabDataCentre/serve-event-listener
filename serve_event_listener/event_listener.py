@@ -14,6 +14,11 @@ from urllib3.exceptions import HTTPError
 
 logger = logging.getLogger(__name__)
 
+# Disable urllib3 and Kubernetes client debug logs
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("kubernetes").setLevel(logging.WARNING)
+
 USERNAME = os.environ.get("USERNAME", None)
 PASSWORD = os.environ.get("PASSWORD", None)
 KUBECONFIG = os.environ.get("KUBECONFIG", None)
@@ -118,8 +123,8 @@ class EventListener:
             status_queue_thread = threading.Thread(target=self._status_queue.process)
             status_queue_thread.start()
 
-            # Enable more logging details from the urllib3 library, only once
-            urllib3.add_stderr_logger()
+            # We refrain from more logging details from the urllib3 library for now
+            # urllib3.add_stderr_logger()
 
             retries = 0
             while retries < max_retries:
@@ -255,8 +260,13 @@ class EventListener:
                 "Could not set the cluster config properly."
             ) from e
 
+        # 🔑 Disable client-side debug logging
+        cfg = client.Configuration.get_default_copy()
+        cfg.debug = False
+        api_client = client.ApiClient(cfg)
+
         logger.info("Kubernetes client successfully set")
-        self.client = client.CoreV1Api()
+        self.client = client.CoreV1Api(api_client)
 
         # self.list_all_pods()
 
@@ -283,7 +293,7 @@ class EventListener:
         try:
             api_response = self.client.list_namespaced_pod(
                 namespace=self.namespace,
-                limit=500,
+                limit=5000,
                 timeout_seconds=120,
                 watch=False,
             )
