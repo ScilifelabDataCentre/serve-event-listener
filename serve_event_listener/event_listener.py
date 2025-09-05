@@ -260,7 +260,7 @@ class EventListener:
                 "Could not set the cluster config properly."
             ) from e
 
-        # 🔑 Disable client-side debug logging
+        # Disable client-side debug logging
         cfg = client.Configuration.get_default_copy()
         cfg.debug = False
         api_client = client.ApiClient(cfg)
