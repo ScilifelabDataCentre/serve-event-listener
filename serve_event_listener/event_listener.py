@@ -126,10 +126,14 @@ class EventListener:
                 try:
                     # Start fresh if no resourceVersion (initial run or after 410)
                     if not self.resource_version:
+                        logger.debug("No k8s resource version yet set. Getting now.")
                         self.resource_version = (
                             self.get_resource_version_from_pod_list()
                         )
 
+                    logger.debug(
+                        f"Done getting resource version: {self.resource_version}"
+                    )
                     # Stream events with resource_version
                     # Use a timeout of 4 minutes to avoid staleness
                     for event in self.watch.stream(
@@ -213,6 +217,7 @@ class EventListener:
         Returns:
         - bool: True if the status is okay, False otherwise.
         """
+        logger.debug("Verifying that the server API is up and available.")
         response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
 
         if response is None:

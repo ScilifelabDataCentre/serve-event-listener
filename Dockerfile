@@ -1,4 +1,4 @@
-FROM python:alpine3.19
+FROM python:3.12-alpine3.20
 LABEL maintainer="serve@scilifelab.se"
 
 ARG USER=serve
@@ -8,8 +8,8 @@ WORKDIR $HOME
 
 COPY requirements.txt .
 
-RUN apk add --update --no-cache \
-    && pip install --no-cache-dir --upgrade pip==25.0.1\
+RUN apk add --no-cache curl=8.12.1-r0 \
+    && pip install --no-cache-dir --upgrade "pip~=25.2" \
     && pip install --no-cache-dir -r requirements.txt \
     && rm requirements.txt
 

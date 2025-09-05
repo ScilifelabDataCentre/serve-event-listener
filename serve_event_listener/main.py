@@ -53,9 +53,17 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
+    start_message = (
+        "\n\n\t{}\n\t"
+        "Starting Kubernetes Event Listener \n\t"
+        "Namespace: {}\n\t"
+        "Label Selector: {}\n\t"
+        "debug: {}\n\t"
+        "{}\n"
+    )
     logger.info(
-        "\n\n\t{}\n\t  Starting Kubernetes Event Listener \n\t  Namespace: {}\n\t  Label Selector: {}\n\t{}\n".format(
-            "#" * 40, args.namespace, args.label_selector, "#" * 40
+        start_message.format(
+            "#" * 40, args.namespace, args.label_selector, DEBUG, "#" * 40
         )
     )
 

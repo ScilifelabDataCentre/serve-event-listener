@@ -19,6 +19,13 @@ git fetch
 git rebase origin/main
 ```
 
+Verify that the code adheres to the style guidelines and code analysis rules:
+```bash
+flake8 .
+black . --check
+hadolint Dockerfile
+```
+
 When the work is ready to be merged to main, create a PR to merge your feature branch into the main branch.
 
 To release a new version of the event-listener, first tag the latest commit. When the tag is pushed to origin, a github action is run automatically and publishes a new package which is a docker image called event-listener.
