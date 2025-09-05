@@ -191,7 +191,7 @@ class EventListener:
                     time.sleep(retry_delay)
 
                     # We no longer treat all ApiExceptions as flow-stopping errors
-                    #retries += 1
+                    # retries += 1
 
                 except ValueError as e:
                     # Handle value errors related to data processing
@@ -292,7 +292,10 @@ class EventListener:
                 release = pod.metadata.labels.get("release")
                 app_status = StatusData.determine_status_from_k8s(pod.status)
                 logger.info(
-                    "Release=%s, %s with status %s", release, pod.metadata.name, app_status
+                    "Release=%s, %s with status %s",
+                    release,
+                    pod.metadata.name,
+                    app_status,
                 )
         except ApiException as e:
             logger.warning(
@@ -350,7 +353,11 @@ class EventListener:
             for sleep in [1, 2, 4]:
                 # Use connect timeout as 3.05s and read timeout of 20s
                 response = requests.post(
-                    url=url, json=data, headers=headers, verify=False, timeout=(3.05, 20)
+                    url=url,
+                    json=data,
+                    headers=headers,
+                    verify=False,
+                    timeout=(3.05, 20),
                 )
                 status_code = response.status_code
 
@@ -364,7 +371,8 @@ class EventListener:
 
                 elif status_code in [401, 403]:
                     logger.warning(
-                        "Received status code %s - Fetching new token and retrying once", status_code
+                        "Received status code %s - Fetching new token and retrying once",
+                        status_code,
                     )
                     self.token = self.fetch_token()
                     self._status_queue.token = self.token
@@ -395,7 +403,9 @@ class EventListener:
             response = None
 
         except requests.exceptions.ReadTimeout as e:
-            logger.warning("Unable to read response from POST to server. ReadTimeout: %s", e)
+            logger.warning(
+                "Unable to read response from POST to server. ReadTimeout: %s", e
+            )
             response = None
 
         except requests.exceptions.Timeout as e:
@@ -426,7 +436,9 @@ class EventListener:
         """
         try:
             # Use connect timeout as 3.05s and read timeout of 20s
-            response = requests.get(url=url, headers=headers, verify=False, timeout=(3.05, 20))
+            response = requests.get(
+                url=url, headers=headers, verify=False, timeout=(3.05, 20)
+            )
             logger.info("GET returned status code: %s", response.status_code)
 
         except requests.exceptions.ConnectTimeout as e:
@@ -434,7 +446,9 @@ class EventListener:
             response = None
 
         except requests.exceptions.ReadTimeout as e:
-            logger.warning("Unable to read response from GET to server. ReadTimeout: %s", e)
+            logger.warning(
+                "Unable to read response from GET to server. ReadTimeout: %s", e
+            )
             response = None
 
         except requests.exceptions.Timeout as e:
