@@ -6,11 +6,12 @@ from typing import Any, Optional, Union
 
 import requests
 import urllib3
+from urllib3.exceptions import HTTPError
 from kubernetes import client, config, watch
 from kubernetes.client.exceptions import ApiException
-from status_data import StatusData
-from status_queue import StatusQueue
-from urllib3.exceptions import HTTPError
+from serve_event_listener.status_data import StatusData
+from serve_event_listener.status_queue import StatusQueue
+
 
 logger = logging.getLogger(__name__)
 
