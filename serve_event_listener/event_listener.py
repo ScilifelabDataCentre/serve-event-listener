@@ -244,8 +244,8 @@ class EventListener:
         """
         logger.info("Setting up Kubernetes client")
         try:
-            if KUBECONFIG:
-                logger.debug("Attempting to load KUBECONFIG")
+            if KUBECONFIG and os.path.exists(KUBECONFIG):
+                logger.debug("Loading kubeconfig from KUBECONFIG = %s", KUBECONFIG)
                 config.load_kube_config(KUBECONFIG)
             else:
                 logger.warning(

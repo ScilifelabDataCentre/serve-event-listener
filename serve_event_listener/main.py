@@ -1,9 +1,8 @@
 import argparse
 import logging
 import os
-
 from colorlog import ColoredFormatter
-from .event_listener import EventListener
+from serve_event_listener.event_listener import EventListener
 
 # Configure the logger
 formatter = ColoredFormatter(
@@ -50,7 +49,7 @@ def parse_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def run(namespace: str, label_selector: str) -> None:
     args = parse_args()
 
     start_message = (
@@ -70,3 +69,12 @@ if __name__ == "__main__":
     event_listener = EventListener(args.namespace, args.label_selector)
     event_listener.setup()
     event_listener.listen()
+
+
+def main():
+    args = parse_args()
+    run(args.namespace, args.label_selector)
+
+
+if __name__ == "__main__":
+    main()

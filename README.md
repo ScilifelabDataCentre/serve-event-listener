@@ -60,7 +60,7 @@ export TEST_LOG_STREAM=sys.stdout
 Navigate to the project directory and execute the following command to run the service:
 
 ```bash
-python3 ./serve_event_listener/main.py --namespace <some-namespace> --label-selector <some label selector>
+python3 -m serve_event_listener.main --namespace <some-namespace> --label-selector <some label selector>
 ```
 
 ### Running the unit tests
@@ -82,8 +82,8 @@ docker build -t <image name>:<image tag> .
 Run the Docker container with the mounted `cluster.conf` file and provide necessary environment variables:
 
 ```bash
-docker run --rm -v $PWD/cluster.conf:/home/serve/cluster.conf \
-    --env KUBECONFIG=/home/serve/cluster.conf \
+docker run --rm -v $PWD/cluster.conf:/app/cluster.conf \
+    --env KUBECONFIG=/app/cluster.conf \
     --env USERNAME=admin@test.com \
     ...(set all env from above) \
      <image name>:<image tag> \
