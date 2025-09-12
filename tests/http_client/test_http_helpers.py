@@ -139,7 +139,7 @@ class TestRequestRetryLogic(unittest.TestCase):
 
         # Verify the second call uses the new token
         second_call_headers = self.mock_session.request.call_args_list[1][1]["headers"]
-        self.assertEqual(second_call_headers["Authorization"], "Bearer new_token")
+        self.assertEqual(second_call_headers["Authorization"], "Token new_token")
 
     def test_timeout_handling(self):
         """Test that _request handles timeouts gracefully and returns None."""

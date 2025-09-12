@@ -19,13 +19,13 @@ def make_session(
 
     The returned session is preconfigured with:
       - Default headers (merged with any provided by the caller).
-      - An optional Bearer token in the Authorization header.
+      - An optional Bearer/Token token in the Authorization header.
       - An HTTPAdapter mounted on both HTTP and HTTPS with a Retry policy.
 
     Args:
         default_headers (Mapping[str, str], optional): Extra headers to add to
             the session (e.g., {"Accept": "application/json"}).
-        token (str, optional): Bearer token to include in the Authorization header.
+        token (str, optional): Bearer/Token token to include in the Authorization header.
         total_retries (int, optional): Total number of retries for failed
             connections and retryable status codes (default is 3).
 
@@ -37,7 +37,7 @@ def make_session(
     if default_headers:
         s.headers.update(default_headers)
     if token:
-        s.headers["Authorization"] = f"Bearer {token}"
+        s.headers["Authorization"] = f"Token {token}"
 
     retry = Retry(
         total=total_retries,

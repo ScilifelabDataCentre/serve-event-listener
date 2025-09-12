@@ -9,6 +9,8 @@ import urllib3
 from urllib3.exceptions import HTTPError
 from kubernetes import client, config, watch
 from kubernetes.client.exceptions import ApiException
+from serve_event_listener.http_client import get as http_get, make_session
+from serve_event_listener.http_client import post as http_post
 from serve_event_listener.status_data import StatusData
 from serve_event_listener.status_queue import StatusQueue
 
@@ -49,12 +51,26 @@ class EventListener:
         - label_selector (str): The label selector for filtering events.
         """
         logger.info("Creating EventListener object")
+
         self.namespace = namespace
         self.label_selector = label_selector
+
         self.setup_complete = False
+        self._status_data = StatusData()
+        self._status_queue = None
+        self.token = None
 
         # Track the latest resourceVersion
         self.resource_version = None
+
+        # Prepare session and settings for http get and post requests
+        self.session = make_session(total_retries=3)
+        self.token_fetcher = self.fetch_token
+        self.verify_tls = False
+
+        # Same settings as in http client but repeated for clarity
+        self.timeout = (3.05, 20.0)
+        self.backoff_seconds = (1, 2, 4)
 
     @property
     def status_data_dict(self) -> dict:
@@ -95,9 +111,13 @@ class EventListener:
 
             self.setup_client()
             self.token = self.fetch_token()
-            self._status_data = StatusData()
             self._status_data.set_k8s_api_client(self.client, self.namespace)
-            self._status_queue = StatusQueue(self.post, self.token)
+
+            # StatusQueue now takes a shared session instead of post function
+            self._status_queue = StatusQueue(
+                self.session, APP_STATUS_API_ENDPOINT, self.token, self.fetch_token
+            )
+
             self.setup_complete = True
         except Exception as e:
             # TODO: Add specific exceptions here
@@ -228,15 +248,20 @@ class EventListener:
         Returns:
         - bool: True if the status is okay, False otherwise.
         """
-        logger.debug("Verifying that the server API is up and available.")
-        response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
+        url = BASE_URL + "/openapi/v1/are-you-there"
+        logger.debug("Verifying that the server API is up and available via %s", url)
 
-        if response is None:
-            return False
-        elif response.status_code == 200:
-            return True
-        else:
-            return False
+        # Using the new http get function
+        response = http_get(
+            self.session,
+            url,
+            verify=self.verify_tls,
+            timeout=self.timeout,
+            backoff_seconds=self.backoff_seconds,
+        )
+        # response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
+
+        return bool(response and response.status_code == 200)
 
     def setup_client(self) -> None:
         """
@@ -328,18 +353,49 @@ class EventListener:
             requests.exceptions.RequestException: If the service does not respond.
         """
         data = {"username": USERNAME, "password": PASSWORD}
+
+        # Use the shared session and your central call options.
+        # NOTE: token_fetcher=None — we don't want the client to recurse to fetch a token
+        # while we're already fetching one.
+        response: Optional[requests.Response] = http_post(
+            self.session,
+            TOKEN_API_ENDPOINT,
+            data=data,
+            verify=self.verify_tls,
+            timeout=self.timeout,
+            backoff_seconds=self.backoff_seconds,
+            token_fetcher=None,
+        )
+
+        if response is None:
+            # Network-layer exception already logged by the wrapper; surface a clear error.
+            raise requests.exceptions.RequestException("Token endpoint unreachable")
+
+        if response.status_code != 200:
+            # Include status + short body for diagnostics.
+            raise requests.exceptions.RequestException(
+                f"Token endpoint returned {response.status_code}: {response.text[:200]}"
+            )
+
         try:
-            response = self.post(url=TOKEN_API_ENDPOINT, data=data)
-            response_json = response.json()
-            token = response_json["token"]
-            logger.debug("FETCHED TOKEN: %s", token)
+            payload = response.json()
+        except ValueError as e:
+            raise requests.exceptions.RequestException(
+                "Token endpoint returned non-JSON body"
+            ) from e
 
-        except KeyError as e:
-            message = "No token was fetched - Are the credentials correct?"
+        token = payload.get("token")
+        if not token or not isinstance(token, str):
+            message = (
+                "No token was fetched — check credentials or server response format"
+            )
             logger.error(message)
-            raise KeyError(message) from e
-        logger.info("Token fetched successfully")
+            raise KeyError(message)
 
+        # Also update the token:
+        self.token = token
+
+        logger.info("Token fetched successfully")
         return token
 
     def post(
@@ -359,6 +415,10 @@ class EventListener:
         Returns:
             int: The HTTP status code of the response.
         """
+
+        # TODO: Deprecate for now. Later can be removed.
+        raise DeprecationWarning("Deprecated function. To be removed.")
+
         logger.debug("POST called to URL %s", url)
         try:
             for sleep in [1, 2, 4]:
@@ -445,6 +505,10 @@ class EventListener:
         Returns:
             int: The HTTP status code of the response.
         """
+
+        # TODO: Deprecate for now. Later can be removed.
+        raise DeprecationWarning("Deprecated function. To be removed.")
+
         try:
             # Use connect timeout as 3.05s and read timeout of 20s
             response = requests.get(

@@ -22,6 +22,7 @@ def _request(
     timeout: Timeout = (3.05, 20.0),
     backoff_seconds=(1, 2, 4),
     token_fetcher: Optional[Callable[[], str]] = None,  # optional
+    auth_scheme: str = "Token",  # can easily change to Bearer in the future
     sleep_fn: Callable[[float], None] = time.sleep,  # overridable in tests
 ) -> Optional[requests.Response]:
     merged_headers = {**(session.headers or {}), **(headers or {})}
@@ -34,7 +35,7 @@ def _request(
     if token_fetcher and "Authorization" not in merged_headers:
         tok = token_fetcher()
         if tok:
-            merged_headers["Authorization"] = f"Bearer {tok}"
+            merged_headers["Authorization"] = f"{auth_scheme} {tok}"
 
     try:
         last = None
@@ -58,7 +59,7 @@ def _request(
             if code in (401, 403) and token_fetcher and not refreshed:
                 tok = token_fetcher()
                 if tok:
-                    merged_headers["Authorization"] = f"Bearer {tok}"
+                    merged_headers["Authorization"] = f"Token {tok}"
                 refreshed = True
                 sleep_fn(delay)
                 continue
