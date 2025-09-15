@@ -22,14 +22,13 @@ class StatusQueue:
 
         self.session = session
         self.url = url
-        # self.post_handler = post_handler
         self.token = token
         self.token_fetcher = token_fetcher
 
     def add(self, status_data) -> None:
         """Adds a status_data object to the queue."""
         logger.debug(
-            "Data added to queue. Queue now has length %s", self.queue.qsize() + 1
+            "K8s release status data added to queue. Queue now has length %s", self.queue.qsize() + 1
         )
         self.queue.put(status_data)
 
