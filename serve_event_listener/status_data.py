@@ -344,13 +344,18 @@ class StatusData:
             or creation_timestamp >= status_data[release]["creation_timestamp"]
             or deletion_timestamp is not None
         ):
+            # The release is either new, updated or deleted. Handle this event.
 
             if deletion_timestamp is not None:
-                # Status Deleted may be be a disruptive event to send to the client app
-                # Therefore we double check if there are other pods in the release
+                # This is potentially a deleted event, but let us first verify this.
+                # Status Deleted may be be a disruptive event to send to the client app.
+                # Therefore we double check if there are other pods in the release.
+
                 if (
-                    deletion_timestamp > status_data[release]["creation_timestamp"]
-                    or creation_timestamp is not None
+                    release in status_data
+                    and deletion_timestamp > status_data[release]["creation_timestamp"]
+                ) or (
+                    creation_timestamp is not None
                     and deletion_timestamp > creation_timestamp
                 ):
                     if self.k8s_api_client is None:
@@ -376,6 +381,7 @@ class StatusData:
                             status = "Deleted"
 
                 if status != "Deleted":
+                    # Do not consider this release to be deleted
                     deletion_timestamp = None
 
             status_data[release] = {

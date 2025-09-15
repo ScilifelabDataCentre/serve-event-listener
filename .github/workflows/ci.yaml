@@ -6,6 +6,7 @@ on:
     paths-ignore:
       - '**.md'
   pull_request:
+    types: [opened, reopened]
     branches: [ "*" ]
     paths-ignore:
       - '**.md'
@@ -26,6 +27,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run isort  # pip-based (flexible)
+        run: |
+          pip install isort
+          isort . --check --diff --profile black
 
       - name: Run linter black
         uses: psf/black@stable

@@ -4,25 +4,39 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import requests
+
+from serve_event_listener.http_client import post as http_post
+
 logger = logging.getLogger(__name__)
 
 
 class StatusQueue:
-    def __init__(self, post_handler, token):
+    """
+    StatusQueue represents a queue of k8s pod statuses to process.
+    """
+
+    def __init__(
+        self, session: requests.Session, url: str, token: str, token_fetcher=None
+    ):
         self.queue = queue.Queue()
         self.stop_event = threading.Event()
 
-        # The post handler is a function that is set by the EventListener class
-        self.post_handler = post_handler
+        self.session = session
+        self.url = url
         self.token = token
+        self.token_fetcher = token_fetcher
 
-    def add(self, status_data):
+    def add(self, status_data) -> None:
+        """Adds a status_data object to the queue."""
         logger.debug(
-            f"Data added to queue. Queue now has length {self.queue.qsize()+1}"
+            "K8s release status data added to queue. Queue now has length %s",
+            self.queue.qsize() + 1,
         )
         self.queue.put(status_data)
 
-    def process(self):
+    def process(self) -> None:
+        """Process the queue in a loop until a stop event is detected."""
         log_cnt_q_is_empty: int = 0
         do_wait: bool = False
 
@@ -41,7 +55,7 @@ class StatusQueue:
 
                 if new_status == "Deleted":
                     logger.info(
-                        f"Processing release: {release}. New status is Deleted!"
+                        "Processing release: %s. New status is Deleted!", release
                     )
 
                     event_ts = datetime.strptime(
@@ -60,15 +74,37 @@ class StatusQueue:
                         do_wait = True
                         continue
 
-                self.post_handler(
+                headers = {
+                    "Authorization": f"Token {self.token}",
+                    "Content-Type": "application/json",
+                }
+                resp = http_post(
+                    self.session,
+                    self.url,
                     data=status_data,
-                    headers={"Authorization": f"Token {self.token}"},
+                    headers=headers,
+                    token_fetcher=self.token_fetcher,
                 )
 
                 self.queue.task_done()
 
+                if resp is None:
+                    logger.warning(
+                        "POST failed: network/transport error (wrapper returned None)"
+                    )
+                elif resp.status_code >= 400:
+                    logger.warning(
+                        "POST failed: status %s body=%s",
+                        resp.status_code,
+                        (resp.text or "")[:200],
+                    )
+                else:
+                    logger.debug("POST ok: %s", resp.status_code)
+
                 logger.debug(
-                    f"Processed queue successfully of release {release}, new status={new_status}"
+                    "Processed queue successfully of release %s, new status=%s",
+                    release,
+                    new_status,
                 )
                 log_cnt_q_is_empty = 0
             except queue.Empty:
@@ -81,6 +117,7 @@ class StatusQueue:
                 log_cnt_q_is_empty += 1
                 # pass  # Continue looping if the queue is empty
 
-    def stop_processing(self):
+    def stop_processing(self) -> None:
+        """Stop processing the queue."""
         logger.warning("Queue processing stopped")
         self.stop_event.set()

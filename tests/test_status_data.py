@@ -23,6 +23,8 @@ else:
 
 
 class TestPodProcessing(unittest.TestCase):
+    """This test case simulates a realistic processing flow of a deployed pod."""
+
     release = "some_release"
 
     def setUp(self) -> None:
@@ -52,6 +54,26 @@ class TestPodProcessing(unittest.TestCase):
 
         time.sleep(0.01)
 
+        self.pod.delete()
+
+        event = {"object": self.pod}
+        self.status_data.update(event)
+
+        assert (
+            self.status_data.status_data[release].get("status") == "Terminated"
+        )  # before: Deleted
+
+    def test_pod_delete_nonexisting_pod(self):
+        """
+        This tests that a k8s watch event with a delete action of a
+        non-existing pod is still handled in a safe manner.
+        """
+        release = "r1234567"
+
+        # Create the pod object but do not add the create event!
+        self.pod.create(release)
+
+        # Now delete the pod that lacks a create event
         self.pod.delete()
 
         event = {"object": self.pod}
@@ -96,7 +118,8 @@ class TestPodProcessing(unittest.TestCase):
         """
         This scenario creates a pod, then creates a new pod.
         After the second pod is created, the first one is deleted.
-        This is similar to how replicasets work"""
+        This is similar to how replicasets work.
+        """
 
         release = "r1234567"
 

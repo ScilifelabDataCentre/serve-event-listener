@@ -8,11 +8,20 @@ import requests
 import urllib3
 from kubernetes import client, config, watch
 from kubernetes.client.exceptions import ApiException
-from status_data import StatusData
-from status_queue import StatusQueue
 from urllib3.exceptions import HTTPError
 
+from serve_event_listener.http_client import get as http_get
+from serve_event_listener.http_client import make_session
+from serve_event_listener.http_client import post as http_post
+from serve_event_listener.status_data import StatusData
+from serve_event_listener.status_queue import StatusQueue
+
 logger = logging.getLogger(__name__)
+
+# Disable urllib3 and Kubernetes client debug logs
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("kubernetes").setLevel(logging.WARNING)
 
 USERNAME = os.environ.get("USERNAME", None)
 PASSWORD = os.environ.get("PASSWORD", None)
@@ -43,12 +52,26 @@ class EventListener:
         - label_selector (str): The label selector for filtering events.
         """
         logger.info("Creating EventListener object")
+
         self.namespace = namespace
         self.label_selector = label_selector
+
         self.setup_complete = False
+        self._status_data = StatusData()
+        self._status_queue = None
+        self.token = None
 
         # Track the latest resourceVersion
         self.resource_version = None
+
+        # Prepare session and settings for http get and post requests
+        self.session = make_session(total_retries=3)
+        self.token_fetcher = self.fetch_token
+        self.verify_tls = False
+
+        # Same settings as in http client but repeated for clarity
+        self.timeout = (3.05, 20.0)
+        self.backoff_seconds = (1, 2, 4)
 
     @property
     def status_data_dict(self) -> dict:
@@ -89,13 +112,17 @@ class EventListener:
 
             self.setup_client()
             self.token = self.fetch_token()
-            self._status_data = StatusData()
             self._status_data.set_k8s_api_client(self.client, self.namespace)
-            self._status_queue = StatusQueue(self.post, self.token)
+
+            # StatusQueue now takes a shared session instead of post function
+            self._status_queue = StatusQueue(
+                self.session, APP_STATUS_API_ENDPOINT, self.token, self.fetch_token
+            )
+
             self.setup_complete = True
         except Exception as e:
             # TODO: Add specific exceptions here
-            logger.error(f"Setup failed {e}")
+            logger.error("Setup failed %s", e)
 
     def listen(self) -> None:
         """
@@ -118,8 +145,8 @@ class EventListener:
             status_queue_thread = threading.Thread(target=self._status_queue.process)
             status_queue_thread.start()
 
-            # Enable more logging details from the urllib3 library, only once
-            urllib3.add_stderr_logger()
+            # We refrain from more logging details from the urllib3 library for now
+            # urllib3.add_stderr_logger()
 
             retries = 0
             while retries < max_retries:
@@ -132,7 +159,7 @@ class EventListener:
                         )
 
                     logger.debug(
-                        f"Done getting resource version: {self.resource_version}"
+                        "Done getting resource version: %s", self.resource_version
                     )
                     # Stream events with resource_version
                     # Use a timeout of 4 minutes to avoid staleness
@@ -159,42 +186,47 @@ class EventListener:
 
                 except urllib3.exceptions.ProtocolError as e:
                     logger.error(f"ProtocolError occurred: {e!r}")
-                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    logger.info("Retrying in %s seconds...", retry_delay)
                     time.sleep(retry_delay)
                     retries += 1
 
                 except ApiException as e:
-                    logger.warning(f"ApiException occurred: {e!r}")
+                    logger.info(f"ApiException occurred: {e!r}")
                     logger.debug(
-                        f"ApiException details: {e.status}, {e.body}, {e.headers}"
+                        "ApiException details: %s, %s, %s", e.status, e.body, e.headers
                     )
 
                     if e.status == 410:
                         # 410 Gone
-                        logger.warning(
+                        logger.info(
                             "Watch closed due to outdated resource version. Re-establishing watch."
                         )
                         # Force fresh start
                         self.resource_version = None
                     elif e.status in [401, 403]:
-                        logger.error("Authentication/Authorization error: %s" % e)
+                        logger.error("Authentication/Authorization error: %s", e)
+                        retries += 1
                     elif 500 <= e.status < 600:
-                        logger.error("Server error: %s" % e)
+                        logger.error("Server error: %s", e)
+                        retries += 1
                     else:
-                        logger.error("Unexpected API exception: %s" % e)
+                        logger.error("Unexpected API exception: %s", e)
+                        retries += 1
 
-                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    logger.info("Retrying in %s seconds...", retry_delay)
 
                     time.sleep(retry_delay)
-                    retries += 1
+
+                    # We no longer treat all ApiExceptions as flow-stopping errors
+                    # retries += 1
 
                 except ValueError as e:
                     # Handle value errors related to data processing
-                    logger.error("Value error: %s" % e)
+                    logger.error("Value error: %s", e)
                     retries += 1
 
                 except (HTTPError, ConnectionError) as e:
-                    logger.error("Network-related error: %s" % e)
+                    logger.error("Network-related error: %s", e)
                     # A longer delay
                     time.sleep(5)
 
@@ -204,7 +236,7 @@ class EventListener:
                     self._status_queue.stop_processing()
                     break  # Break the loop for other exceptions
 
-            if retries == max_retries:
+            if retries >= max_retries:
                 self._status_queue.stop_processing()
                 logger.error("Max retries reached. Unable to establish the connection.")
         else:
@@ -217,15 +249,20 @@ class EventListener:
         Returns:
         - bool: True if the status is okay, False otherwise.
         """
-        logger.debug("Verifying that the server API is up and available.")
-        response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
+        url = BASE_URL + "/openapi/v1/are-you-there"
+        logger.debug("Verifying that the server API is up and available via %s", url)
 
-        if response is None:
-            return False
-        elif response.status_code == 200:
-            return True
-        else:
-            return False
+        # Using the new http get function
+        response = http_get(
+            self.session,
+            url,
+            verify=self.verify_tls,
+            timeout=self.timeout,
+            backoff_seconds=self.backoff_seconds,
+        )
+        # response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
+
+        return bool(response and response.status_code == 200)
 
     def setup_client(self) -> None:
         """
@@ -233,8 +270,8 @@ class EventListener:
         """
         logger.info("Setting up Kubernetes client")
         try:
-            if KUBECONFIG:
-                logger.debug("Attempting to load KUBECONFIG")
+            if KUBECONFIG and os.path.exists(KUBECONFIG):
+                logger.debug("Loading kubeconfig from KUBECONFIG = %s", KUBECONFIG)
                 config.load_kube_config(KUBECONFIG)
             else:
                 logger.warning(
@@ -250,8 +287,13 @@ class EventListener:
                 "Could not set the cluster config properly."
             ) from e
 
+        # Disable client-side debug logging
+        cfg = client.Configuration.get_default_copy()
+        cfg.debug = False
+        api_client = client.ApiClient(cfg)
+
         logger.info("Kubernetes client successfully set")
-        self.client = client.CoreV1Api()
+        self.client = client.CoreV1Api(api_client)
 
         # self.list_all_pods()
 
@@ -278,7 +320,7 @@ class EventListener:
         try:
             api_response = self.client.list_namespaced_pod(
                 namespace=self.namespace,
-                limit=500,
+                limit=5000,
                 timeout_seconds=120,
                 watch=False,
             )
@@ -287,11 +329,14 @@ class EventListener:
                 release = pod.metadata.labels.get("release")
                 app_status = StatusData.determine_status_from_k8s(pod.status)
                 logger.info(
-                    f"Release={release}, {pod.metadata.name} with status {app_status}"
+                    "Release=%s, %s with status %s",
+                    release,
+                    pod.metadata.name,
+                    app_status,
                 )
         except ApiException as e:
             logger.warning(
-                f"Exception when calling CoreV1Api->list_namespaced_pod. {e}"
+                "Exception when calling CoreV1Api->list_namespaced_pod. %s", e
             )
 
     def fetch_token(self) -> str:
@@ -309,18 +354,49 @@ class EventListener:
             requests.exceptions.RequestException: If the service does not respond.
         """
         data = {"username": USERNAME, "password": PASSWORD}
+
+        # Use the shared session and your central call options.
+        # NOTE: token_fetcher=None — we don't want the client to recurse to fetch a token
+        # while we're already fetching one.
+        response: Optional[requests.Response] = http_post(
+            self.session,
+            TOKEN_API_ENDPOINT,
+            data=data,
+            verify=self.verify_tls,
+            timeout=self.timeout,
+            backoff_seconds=self.backoff_seconds,
+            token_fetcher=None,
+        )
+
+        if response is None:
+            # Network-layer exception already logged by the wrapper; surface a clear error.
+            raise requests.exceptions.RequestException("Token endpoint unreachable")
+
+        if response.status_code != 200:
+            # Include status + short body for diagnostics.
+            raise requests.exceptions.RequestException(
+                f"Token endpoint returned {response.status_code}: {response.text[:200]}"
+            )
+
         try:
-            response = self.post(url=TOKEN_API_ENDPOINT, data=data)
-            response_json = response.json()
-            token = response_json["token"]
-            logger.debug(f"FETCHING TOKEN: {token}")
+            payload = response.json()
+        except ValueError as e:
+            raise requests.exceptions.RequestException(
+                "Token endpoint returned non-JSON body"
+            ) from e
 
-        except KeyError as e:
-            message = "No token was fetched - Are the credentials correct?"
+        token = payload.get("token")
+        if not token or not isinstance(token, str):
+            message = (
+                "No token was fetched — check credentials or server response format"
+            )
             logger.error(message)
-            raise KeyError(message) from e
-        logger.info("Token fetched successfully")
+            raise KeyError(message)
 
+        # Also update the token:
+        self.token = token
+
+        logger.info("Token fetched successfully")
         return token
 
     def post(
@@ -340,16 +416,25 @@ class EventListener:
         Returns:
             int: The HTTP status code of the response.
         """
-        logger.debug(f"POST called to URL {url}")
+
+        # TODO: Deprecate for now. Later can be removed.
+        raise DeprecationWarning("Deprecated function. To be removed.")
+
+        logger.debug("POST called to URL %s", url)
         try:
             for sleep in [1, 2, 4]:
+                # Use connect timeout as 3.05s and read timeout of 20s
                 response = requests.post(
-                    url=url, json=data, headers=headers, verify=False, timeout=4
+                    url=url,
+                    json=data,
+                    headers=headers,
+                    verify=False,
+                    timeout=(3.05, 20),
                 )
                 status_code = response.status_code
 
                 if status_code == 200:
-                    logger.info(f"Successful POST - Returned 200 - {response.text}")
+                    logger.info("Successful POST - Returned 200 - %s", response.text)
                     break
 
                 elif status_code == 400:
@@ -358,7 +443,8 @@ class EventListener:
 
                 elif status_code in [401, 403]:
                     logger.warning(
-                        f"Received status code {status_code} - Fetching new token and retrying once"
+                        "Received status code %s - Fetching new token and retrying once",
+                        status_code,
                     )
                     self.token = self.fetch_token()
                     self._status_queue.token = self.token
@@ -370,26 +456,40 @@ class EventListener:
 
                 elif status_code in [404]:
                     logger.warning(
-                        f"Received status code {status_code} - {response.text}"
+                        "Received status code %s - %s", status_code, response.text
                     )
                     break
 
                 elif str(status_code).startswith("5"):
-                    logger.warning(f"Received status code {status_code}")
-                    logger.warning(f"Retrying in {sleep} seconds")
+                    logger.warning("Received status code %s", status_code)
+                    logger.warning("Retrying in %s seconds", sleep)
                     time.sleep(sleep)
 
                 else:
-                    logger.warning(f"Received uncaught status code: {status_code}")
+                    logger.warning("Received uncaught status code: %s", status_code)
 
-            logger.info(f"POST returned - Status code: {status_code}")
+            logger.info("POST returned - Status code: %s", status_code)
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Service did not respond. {e}")
+        except requests.exceptions.ConnectTimeout as e:
+            logger.warning("Unable to POST to server. ConnectTimeout: %s", e)
+            response = None
+
+        except requests.exceptions.ReadTimeout as e:
+            logger.warning(
+                "Unable to read response from POST to server. ReadTimeout: %s", e
+            )
+            response = None
+
+        except requests.exceptions.Timeout as e:
+            logger.warning("Timeout while POST-ing to server: %s", e)
             response = None
 
         except requests.exceptions.ConnectionError as e:
-            logger.error(f"ConnectionError {e}")
+            logger.warning("Unable to POST to server. ConnectionError %s", e)
+            response = None
+
+        except requests.exceptions.RequestException as e:
+            logger.warning("Error during POST-ing to server. RequestException: %s", e)
             response = None
 
         return response
@@ -406,12 +506,37 @@ class EventListener:
         Returns:
             int: The HTTP status code of the response.
         """
-        try:
-            response = requests.get(url=url, headers=headers, verify=False)
-            logger.info(f"GET returned status code: {response.status_code}")
 
-        except requests.exceptions.RequestException:
-            logger.error("Service did not respond.")
+        # TODO: Deprecate for now. Later can be removed.
+        raise DeprecationWarning("Deprecated function. To be removed.")
+
+        try:
+            # Use connect timeout as 3.05s and read timeout of 20s
+            response = requests.get(
+                url=url, headers=headers, verify=False, timeout=(3.05, 20)
+            )
+            logger.info("GET returned status code: %s", response.status_code)
+
+        except requests.exceptions.ConnectTimeout as e:
+            logger.warning("Unable to GET to server. ConnectTimeout: %s", e)
+            response = None
+
+        except requests.exceptions.ReadTimeout as e:
+            logger.warning(
+                "Unable to read response from GET to server. ReadTimeout: %s", e
+            )
+            response = None
+
+        except requests.exceptions.Timeout as e:
+            logger.warning("Timeout while GET-ing to server: %s", e)
+            response = None
+
+        except requests.exceptions.ConnectionError as e:
+            logger.warning("Unable to GET to server. ConnectionError %s", e)
+            response = None
+
+        except requests.exceptions.RequestException as e:
+            logger.warning("Error during GET-ing to server. RequestException: %s", e)
             response = None
 
         return response
