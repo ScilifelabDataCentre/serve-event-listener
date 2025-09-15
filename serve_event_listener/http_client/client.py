@@ -2,7 +2,8 @@
 
 import logging
 import time
-from typing import Optional, Mapping, Any, Tuple, Callable
+from typing import Any, Callable, Mapping, Optional, Tuple
+
 import requests
 
 logger = logging.getLogger(__name__)

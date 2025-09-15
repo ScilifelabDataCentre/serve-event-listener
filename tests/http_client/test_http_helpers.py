@@ -1,9 +1,11 @@
 import unittest
 from unittest.mock import MagicMock
-from urllib3.util.retry import Retry
+
 import requests
 from requests.adapters import HTTPAdapter
-from serve_event_listener.http_client import make_session, _request
+from urllib3.util.retry import Retry
+
+from serve_event_listener.http_client import _request, make_session
 
 
 class TestMakeSession(unittest.TestCase):

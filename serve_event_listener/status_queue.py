@@ -1,9 +1,11 @@
 import logging
 import queue
-import requests
 import threading
 import time
 from datetime import datetime, timezone
+
+import requests
+
 from serve_event_listener.http_client import post as http_post
 
 logger = logging.getLogger(__name__)
@@ -28,7 +30,8 @@ class StatusQueue:
     def add(self, status_data) -> None:
         """Adds a status_data object to the queue."""
         logger.debug(
-            "K8s release status data added to queue. Queue now has length %s", self.queue.qsize() + 1
+            "K8s release status data added to queue. Queue now has length %s",
+            self.queue.qsize() + 1,
         )
         self.queue.put(status_data)
 

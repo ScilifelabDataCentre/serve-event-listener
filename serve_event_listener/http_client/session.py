@@ -1,6 +1,7 @@
 """Configure requests.Session with retries, adapters, and TLS settings."""
 
 from typing import Mapping, Optional, Tuple
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry

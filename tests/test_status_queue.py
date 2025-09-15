@@ -1,10 +1,11 @@
-import unittest
 import threading
 import time
-from unittest.mock import patch, MagicMock
+import unittest
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import requests
+
 from serve_event_listener.status_queue import StatusQueue
 
 

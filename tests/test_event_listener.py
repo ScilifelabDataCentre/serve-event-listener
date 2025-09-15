@@ -1,7 +1,8 @@
 import logging
 import unittest
-from unittest.mock import patch, MagicMock
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 import requests
 
 from serve_event_listener.event_listener import EventListener

@@ -1,7 +1,9 @@
 import argparse
 import logging
 import os
+
 from colorlog import ColoredFormatter
+
 from serve_event_listener.event_listener import EventListener
 
 # Configure the logger
