@@ -22,6 +22,7 @@ git rebase origin/main
 Verify that the code adheres to the style guidelines and code analysis rules:
 ```bash
 flake8 .
+isort .
 black . --check
 hadolint Dockerfile
 ```
