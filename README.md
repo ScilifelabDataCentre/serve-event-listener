@@ -70,6 +70,14 @@ python3 -m serve_event_listener.main --namespace <some-namespace> --label-select
 python -m unittest discover -s tests
 ```
 
+### Running the integration tests
+
+Start the target service (as defined by BASE_URL)
+
+```bash
+RUN_INTEGRATION_TESTS=1 python -m unittest discover -v -s tests/integration/
+```
+
 ## Docker Container Setup
 
 ### Build the Docker Image
