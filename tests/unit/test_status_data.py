@@ -5,7 +5,7 @@ import time
 import unittest
 
 from serve_event_listener.status_data import StatusData
-from tests.create_pods import Pod, PodStatus
+from tests.unit.create_pods import Pod, PodStatus
 
 # Setup logging output for unit test execution
 DEBUG = os.getenv("DEBUG", default="True").lower() in ("true", "1", "t")
