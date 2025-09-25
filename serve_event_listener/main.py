@@ -1,3 +1,13 @@
+"""CLI entry point for the Kubernetes Event Listener service.
+
+Configures colored logging, parses minimal CLI flags, and starts the
+EventListener. Intended to be run with `python -m serve_event_listener.main`
+(or as a Docker ENTRYPOINT).
+
+Environment:
+    DEBUG: truthy string enables DEBUG logging; otherwise INFO. Default DEBUG.
+"""
+
 import argparse
 import logging
 import os
@@ -37,6 +47,13 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args():
+    """Parse command-line options for the event listener.
+
+    Returns:
+        argparse.Namespace: Parsed arguments containing:
+            - namespace (str): Kubernetes namespace to watch.
+            - label_selector (str): Label selector for filtering pods.
+    """
     parser = argparse.ArgumentParser(description="Kubernetes Event Listener")
     parser.add_argument(
         "--namespace",
@@ -52,7 +69,12 @@ def parse_args():
 
 
 def run(namespace: str, label_selector: str) -> None:
-    args = parse_args()
+    """Start the event listener service.
+
+    Args:
+        namespace (str): Kubernetes namespace to watch.
+        label_selector (str): Label selector used to filter pods.
+    """
 
     start_message = (
         "\n\n\t{}\n\t"
@@ -63,17 +85,16 @@ def run(namespace: str, label_selector: str) -> None:
         "{}\n"
     )
     logger.info(
-        start_message.format(
-            "#" * 40, args.namespace, args.label_selector, DEBUG, "#" * 40
-        )
+        start_message.format("#" * 40, namespace, label_selector, DEBUG, "#" * 40)
     )
 
-    event_listener = EventListener(args.namespace, args.label_selector)
+    event_listener = EventListener(namespace, label_selector)
     event_listener.setup()
     event_listener.listen()
 
 
 def main():
+    """Module entry point: parse flags and run the service."""
     args = parse_args()
     run(args.namespace, args.label_selector)
 
