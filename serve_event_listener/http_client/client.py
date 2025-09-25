@@ -25,6 +25,7 @@ def _request(
     token_fetcher: Optional[Callable[[], str]] = None,  # optional
     auth_scheme: str = "Token",  # can easily change to Bearer in the future
     sleep_fn: Callable[[float], None] = time.sleep,  # overridable in tests
+    **request_kwargs,  # pass-through for requests.Session.request
 ) -> Optional[requests.Response]:
     merged_headers = {**(session.headers or {}), **(headers or {})}
 
@@ -49,6 +50,7 @@ def _request(
                 headers=merged_headers or None,
                 verify=verify,
                 timeout=timeout,
+                **request_kwargs,   # can forward extras (allow_redirects, stream, etc.)
             )
             code = resp.status_code
             last = resp

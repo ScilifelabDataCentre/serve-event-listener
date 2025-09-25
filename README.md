@@ -67,7 +67,7 @@ python3 -m serve_event_listener.main --namespace <some-namespace> --label-select
 ### Running the unit tests
 
 ```bash
-python -m unittest discover -s tests
+python -m unittest discover -s tests/unit/
 ```
 
 ### Running the integration tests
