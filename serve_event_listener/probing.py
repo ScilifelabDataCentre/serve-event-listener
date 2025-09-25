@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ProbeResult:
     """Outcome of an availability probe."""
-    status: str                    # "Running" | "Unknown" | "NotFound"
+
+    status: str  # "Running" | "Unknown" | "NotFound"
     port80_status: Optional[int] = None
-    note: str = ""                 # short diagnostic
+    note: str = ""  # short diagnostic
 
 
 class AppAvailabilityProbe:
@@ -74,7 +75,9 @@ class AppAvailabilityProbe:
 
         # (a) Running — server responds OK/redirect
         if code is not None and 200 <= code < 400:
-            return ProbeResult(status="Running", port80_status=code, note="HTTP 2xx/3xx")
+            return ProbeResult(
+                status="Running", port80_status=code, note="HTTP 2xx/3xx"
+            )
 
         # (b) Unknown — DNS ok but no success (refused/timeout/4xx/5xx)
         return ProbeResult(

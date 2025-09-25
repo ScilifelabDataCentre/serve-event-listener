@@ -23,10 +23,7 @@ class TestAppAvailabilityProbeIntegration(IntegrationTestCase):
 
     def test_running_on_live_endpoint(self):
         """Returns Running on a healthy live endpoint (base or PROBE_URL)."""
-        url = (
-            os.getenv("PROBE_URL")
-            or os.getenv("BASE_URL")
-        )
+        url = os.getenv("PROBE_URL") or os.getenv("BASE_URL")
         if not url:
             raise unittest.SkipTest("Set PROBE_URL or BASE_URL")
         if not url.endswith("api/are-you-there/"):

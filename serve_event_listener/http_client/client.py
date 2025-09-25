@@ -50,7 +50,7 @@ def _request(
                 headers=merged_headers or None,
                 verify=verify,
                 timeout=timeout,
-                **request_kwargs,   # can forward extras (allow_redirects, stream, etc.)
+                **request_kwargs,  # can forward extras (allow_redirects, stream, etc.)
             )
             code = resp.status_code
             last = resp
