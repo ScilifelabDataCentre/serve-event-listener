@@ -2,7 +2,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Optional, Union
+from typing import Any, Mapping, Optional
 
 import requests
 import urllib3
@@ -10,6 +10,7 @@ from kubernetes import client, config, watch
 from kubernetes.client.exceptions import ApiException
 from urllib3.exceptions import HTTPError
 
+from serve_event_listener.el_types import StatusRecord
 from serve_event_listener.http_client import get as http_get
 from serve_event_listener.http_client import make_session
 from serve_event_listener.http_client import post as http_post
@@ -57,26 +58,26 @@ class EventListener:
         self.namespace = namespace
         self.label_selector = label_selector
 
-        self.setup_complete = False
-        self._status_data = StatusData()
-        self._status_queue = None
-        self._prober = None
-        self.token = None
+        self.setup_complete: bool = False
+        self._status_data: StatusData = StatusData()
+        self._status_queue: Optional[StatusQueue] = None
+        self._prober: Optional[AppAvailabilityProbe] = None
+        self.token: Optional[str] = None
 
         # Track the latest resourceVersion
-        self.resource_version = None
+        self.resource_version: Optional[str] = None
 
         # Prepare session and settings for http get and post requests
-        self.session = make_session(total_retries=3)
+        self.session: requests.Session = make_session(total_retries=3)
         self.token_fetcher = self.fetch_token
-        self.verify_tls = False
+        self.verify_tls: bool = False
 
         # Same settings as in http client but repeated for clarity
-        self.timeout = (3.05, 20.0)
-        self.backoff_seconds = (1, 2, 4)
+        self.timeout: tuple[float, float] = (3.05, 20.0)
+        self.backoff_seconds: tuple[int, int, int] = (1, 2, 4)
 
     @property
-    def status_data_dict(self) -> dict:
+    def status_data_dict(self) -> Mapping[str, StatusRecord]:
         """
         Property to get the status data dictionary.
 
@@ -86,7 +87,7 @@ class EventListener:
         return self._status_data.status_data
 
     @property
-    def status_data(self) -> Any:
+    def status_data(self) -> StatusData:
         """
         Property to get the status data object.
 
@@ -191,7 +192,7 @@ class EventListener:
                         # Update status_data_object with new event
                         self.status_data.update(event)
 
-                        record = self.status_data.get_status_record()
+                        record: StatusRecord = self.status_data.get_status_record()
 
                         # TODO: If you know the per-release URL here, add it now so the probe can use it:
                         # record["app-url"] = app_url_resolver(record["release"], ...)
@@ -413,145 +414,3 @@ class EventListener:
 
         logger.info("Token fetched successfully")
         return token
-
-    def post(
-        self,
-        url: str = APP_STATUS_API_ENDPOINT,
-        data: dict = {},
-        headers: Union[None, dict] = None,
-    ):
-        """
-        Send a POST request to the specified URL with the provided data and token.
-
-        Args:
-            url (str): The URL to send the POST request to.
-            data (dict): The data to be included in the POST request.
-            header (None or dict): header for the request.
-
-        Returns:
-            int: The HTTP status code of the response.
-        """
-
-        # TODO: Deprecate for now. Later can be removed.
-        raise DeprecationWarning("Deprecated function. To be removed.")
-
-        logger.debug("POST called to URL %s", url)
-        try:
-            for sleep in [1, 2, 4]:
-                # Use connect timeout as 3.05s and read timeout of 20s
-                response = requests.post(
-                    url=url,
-                    json=data,
-                    headers=headers,
-                    verify=False,
-                    timeout=(3.05, 20),
-                )
-                status_code = response.status_code
-
-                if status_code == 200:
-                    logger.info("Successful POST - Returned 200 - %s", response.text)
-                    break
-
-                elif status_code == 400:
-                    logger.warning("Failed POST - Returned 400")
-                    break
-
-                elif status_code in [401, 403]:
-                    logger.warning(
-                        "Received status code %s - Fetching new token and retrying once",
-                        status_code,
-                    )
-                    self.token = self.fetch_token()
-                    self._status_queue.token = self.token
-
-                    # Retry once
-                    time.sleep(sleep)
-                    if sleep > 1:
-                        break
-
-                elif status_code in [404]:
-                    logger.warning(
-                        "Received status code %s - %s", status_code, response.text
-                    )
-                    break
-
-                elif str(status_code).startswith("5"):
-                    logger.warning("Received status code %s", status_code)
-                    logger.warning("Retrying in %s seconds", sleep)
-                    time.sleep(sleep)
-
-                else:
-                    logger.warning("Received uncaught status code: %s", status_code)
-
-            logger.info("POST returned - Status code: %s", status_code)
-
-        except requests.exceptions.ConnectTimeout as e:
-            logger.warning("Unable to POST to server. ConnectTimeout: %s", e)
-            response = None
-
-        except requests.exceptions.ReadTimeout as e:
-            logger.warning(
-                "Unable to read response from POST to server. ReadTimeout: %s", e
-            )
-            response = None
-
-        except requests.exceptions.Timeout as e:
-            logger.warning("Timeout while POST-ing to server: %s", e)
-            response = None
-
-        except requests.exceptions.ConnectionError as e:
-            logger.warning("Unable to POST to server. ConnectionError %s", e)
-            response = None
-
-        except requests.exceptions.RequestException as e:
-            logger.warning("Error during POST-ing to server. RequestException: %s", e)
-            response = None
-
-        return response
-
-    def get(self, url: str, headers: Union[None, dict] = None):
-        """
-        Send a GET request to the specified URL with the provided data and token.
-
-        Args:
-            url (str): The URL to send the GET request to.
-            data (dict): The data to be included in the POST request.
-            header (None or dict): header for the request.
-
-        Returns:
-            int: The HTTP status code of the response.
-        """
-
-        # TODO: Deprecate for now. Later can be removed.
-        raise DeprecationWarning("Deprecated function. To be removed.")
-
-        try:
-            # Use connect timeout as 3.05s and read timeout of 20s
-            response = requests.get(
-                url=url, headers=headers, verify=False, timeout=(3.05, 20)
-            )
-            logger.info("GET returned status code: %s", response.status_code)
-
-        except requests.exceptions.ConnectTimeout as e:
-            logger.warning("Unable to GET to server. ConnectTimeout: %s", e)
-            response = None
-
-        except requests.exceptions.ReadTimeout as e:
-            logger.warning(
-                "Unable to read response from GET to server. ReadTimeout: %s", e
-            )
-            response = None
-
-        except requests.exceptions.Timeout as e:
-            logger.warning("Timeout while GET-ing to server: %s", e)
-            response = None
-
-        except requests.exceptions.ConnectionError as e:
-            logger.warning("Unable to GET to server. ConnectionError %s", e)
-            response = None
-
-        except requests.exceptions.RequestException as e:
-            logger.warning("Error during GET-ing to server. RequestException: %s", e)
-            response = None
-
-        return response
