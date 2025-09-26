@@ -13,6 +13,7 @@ from urllib3.exceptions import HTTPError
 from serve_event_listener.http_client import get as http_get
 from serve_event_listener.http_client import make_session
 from serve_event_listener.http_client import post as http_post
+from serve_event_listener.probing import AppAvailabilityProbe
 from serve_event_listener.status_data import StatusData
 from serve_event_listener.status_queue import StatusQueue
 
@@ -59,6 +60,7 @@ class EventListener:
         self.setup_complete = False
         self._status_data = StatusData()
         self._status_queue = None
+        self._prober = None
         self.token = None
 
         # Track the latest resourceVersion
@@ -114,9 +116,20 @@ class EventListener:
             self.token = self.fetch_token()
             self._status_data.set_k8s_api_client(self.client, self.namespace)
 
+            self._prober = AppAvailabilityProbe(
+                self.session,
+                verify_tls=self.verify_tls,
+                timeout=self.timeout,
+                backoff_seconds=self.backoff_seconds,
+            )
+
             # StatusQueue now takes a shared session instead of post function
             self._status_queue = StatusQueue(
-                self.session, APP_STATUS_API_ENDPOINT, self.token, self.fetch_token
+                self.session,
+                APP_STATUS_API_ENDPOINT,
+                self.token,
+                self.fetch_token,
+                prober=self.prober,
             )
 
             self.setup_complete = True
