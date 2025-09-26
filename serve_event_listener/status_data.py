@@ -50,10 +50,10 @@ def _detect_app_type(pod) -> Optional[AppType]:
 class StatusData:
     """Logic to process k8s event information into app status."""
 
-    def __init__(self):
+    def __init__(self, namespace: str = "default"):
         self.status_data = {}
         self.k8s_api_client = None
-        self.namespace = "default"
+        self.namespace: str = namespace
 
     @staticmethod
     def determine_status_from_k8s(
@@ -307,41 +307,6 @@ class StatusData:
         """Return the latest per-release StatusRecord to enqueue."""
         release = self.get_latest_release()
         return self.status_data[release]
-
-    def get_post_data(self) -> PostPayload:
-        """
-        The Serve API app-statuses expects a json on this form:
-        {
-            “token“: <token>,
-            “new-status“: <new status>,
-            “event-msg“: {“pod-msg“: <msg>, “container-msg“: <msg>},
-            “event-ts“: <event timestamp>
-        }
-
-        Parameters:
-        - status_data (dict): status_data dict from stream.
-
-        Returns:
-        - str: post data on the form explained above
-        """
-
-        # TODO: Deprecate for now. Later can be removed.
-        raise DeprecationWarning("Deprecated function. To be removed.")
-
-        release = self.get_latest_release()
-        data = self.status_data[release]
-
-        post_data = {
-            "release": release,
-            "new-status": data.get("status", None),
-            "event-ts": data.get("event-ts", None),
-            "event-msg": {
-                "pod-msg": data.get("pod-msg", None),
-                "container-msg": data.get("container-msg", None),
-            },
-        }
-        logger.debug("Converting to POST data")
-        return post_data
 
     def update_or_create_status(
         self,

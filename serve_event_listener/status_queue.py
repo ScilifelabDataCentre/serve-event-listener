@@ -1,10 +1,11 @@
 import logging
 import os
-import queue
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from queue import Empty, Queue
+from typing import Callable, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -40,22 +41,49 @@ class StatusQueue:
     Enriches with curl-probe and serializes to PostPayload just before sending.
     """
 
+    # Attribute annotations (help static checkers)
+    session: requests.Session
+    url: str
+    token: str
+    token_fetcher: Optional[Callable[[], str]]
+    prober: Optional[AppAvailabilityProbe]
+    queue: Queue[StatusRecord]
+    stop_event: threading.Event
+
     def __init__(
         self,
         session: requests.Session,
         url: str,
         token: str,
-        token_fetcher=None,
+        token_fetcher: Optional[Callable[[], str]] = None,
         prober: Optional[AppAvailabilityProbe] = None,
     ):
-        self.queue = queue.Queue()
-        self.stop_event = threading.Event()
+        """
+        Args:
+            session: Shared HTTP session to reuse connections and settings.
+            url: Absolute endpoint for posting status updates.
+            token: Initial DRF token; may be refreshed via `token_fetcher`.
+            token_fetcher: Optional callable returning a fresh token on 401/403.
+            prober: Optional availability prober used before posting.
+
+        Raises:
+            ValueError: If `url` is not absolute or `token` is empty.
+        """
+        # Minimal runtime validation (nice for early misconfig)
+        if not token:
+            raise ValueError("token must be non-empty")
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError(f"url must be absolute (got {url!r})")
 
         self.session = session
         self.url = url
         self.token = token
         self.token_fetcher = token_fetcher
         self.prober = prober
+
+        self.queue = Queue[StatusRecord]()  # queue of StatusRecord items
+        self.stop_event = threading.Event()
 
     def add(self, record: StatusRecord) -> None:
         """Enqueue a StatusRecord."""
@@ -156,7 +184,7 @@ class StatusQueue:
                     new_status,
                 )
                 log_cnt_q_is_empty = 0
-            except queue.Empty:
+            except Empty:
                 if log_cnt_q_is_empty <= 2:
                     logger.debug("Nothing to do. The queue is empty.")
                 elif log_cnt_q_is_empty == 3:
