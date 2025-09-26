@@ -7,7 +7,8 @@ from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 from kubernetes.client.models import V1PodStatus
 
-from serve_event_listener.el_types import AppType, PostPayload, StatusRecord
+from serve_event_listener.app_urls import resolve_app_url
+from serve_event_listener.el_types import AppType, StatusRecord
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,15 @@ class StatusData:
     """Logic to process k8s event information into app status."""
 
     def __init__(self, namespace: str = "default"):
+        # TODO: In the future, we will also refactor status_data to
+        # instead hold an Internal store: release -> StatusRecord
+        # self._by_release: Dict[str, StatusRecord] = {}
+        # Track which release was last updated (used by get_status_record())
+        # self._last_release: Optional[str] = None
+
+        # But for now we continue to use the current dict status_data:
         self.status_data = {}
+
         self.k8s_api_client = None
         self.namespace: str = namespace
 
@@ -299,6 +308,13 @@ class StatusData:
             app_type = _detect_app_type(pod)
             self.status_data[release]["app-type"] = pod_message
             logger.info("Detected this pod's app type to be = %s", app_type)
+
+            if app_type:
+                # Only set app-url if we can resolve it
+                rec = self.get_status_record()
+                url = resolve_app_url(rec, fallback_namespace=self.namespace)
+                if url:
+                    self.status_data[release]["app-url"] = url
 
             self.status_data[release]["pod-msg"] = pod_message
             self.status_data[release]["container-msg"] = container_message

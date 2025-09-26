@@ -194,9 +194,6 @@ class EventListener:
 
                         record: StatusRecord = self.status_data.get_status_record()
 
-                        # TODO: If you know the per-release URL here, add it now so the probe can use it:
-                        # record["app-url"] = app_url_resolver(record["release"], ...)
-
                         # Add to queue. Queue handles post and return codes
                         self._status_queue.add(record)
 
@@ -276,7 +273,6 @@ class EventListener:
             timeout=self.timeout,
             backoff_seconds=self.backoff_seconds,
         )
-        # response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
 
         return bool(response and response.status_code == 200)
 
