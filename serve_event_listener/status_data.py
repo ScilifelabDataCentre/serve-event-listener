@@ -1,11 +1,13 @@
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 from kubernetes.client.models import V1PodStatus
+
+from serve_event_listener.el_types import AppType, PostPayload, StatusRecord
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,29 @@ K8S_STATUS_MAP = {
 }
 
 
+def _detect_app_type(pod) -> Optional[AppType]:
+    labels = getattr(pod.metadata, "labels", None) or {}
+    ann = getattr(pod.metadata, "annotations", None) or {}
+    values = " ".join(
+        str(v).lower() for v in list(labels.values()) + list(ann.values())
+    )
+    if "shinyproxy" in values or "shiny-proxy" in values:
+        return "shiny-proxy"
+    if "shiny" in values:
+        return "shiny"
+    # images fallback
+    containers = getattr(getattr(pod, "spec", None), "containers", None) or []
+    images = " ".join(str(getattr(c, "image", "")).lower() for c in containers)
+    if "shinyproxy" in images:
+        return "shiny-proxy"
+    if "rocker/shiny" in images or ":shiny" in images or "rstudio" in images:
+        return "shiny"
+    return None
+
+
 class StatusData:
+    """Logic to process k8s event information into app status."""
+
     def __init__(self):
         self.status_data = {}
         self.k8s_api_client = None
@@ -272,10 +296,19 @@ class StatusData:
                 deletion_timestamp,
             )
 
+            app_type = _detect_app_type(pod)
+            self.status_data[release]["app-type"] = pod_message
+            logger.info("Detected this pod's app type to be = %s", app_type)
+
             self.status_data[release]["pod-msg"] = pod_message
             self.status_data[release]["container-msg"] = container_message
 
-    def get_post_data(self) -> dict:
+    def get_status_record(self) -> StatusRecord:
+        """Return the latest per-release StatusRecord to enqueue."""
+        release = self.get_latest_release()
+        return self.status_data[release]
+
+    def get_post_data(self) -> PostPayload:
         """
         The Serve API app-statuses expects a json on this form:
         {
@@ -291,6 +324,10 @@ class StatusData:
         Returns:
         - str: post data on the form explained above
         """
+
+        # TODO: Deprecate for now. Later can be removed.
+        raise DeprecationWarning("Deprecated function. To be removed.")
+
         release = self.get_latest_release()
         data = self.status_data[release]
 

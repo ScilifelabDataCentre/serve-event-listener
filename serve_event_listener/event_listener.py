@@ -129,7 +129,7 @@ class EventListener:
                 APP_STATUS_API_ENDPOINT,
                 self.token,
                 self.fetch_token,
-                prober=self.prober,
+                prober=self._prober,
             )
 
             self.setup_complete = True
@@ -191,11 +191,13 @@ class EventListener:
                         # Update status_data_object with new event
                         self.status_data.update(event)
 
-                        # Extract the data that should be sent to API
-                        data = self.status_data.get_post_data()
+                        record = self.status_data.get_status_record()
+
+                        # TODO: If you know the per-release URL here, add it now so the probe can use it:
+                        # record["app-url"] = app_url_resolver(record["release"], ...)
 
                         # Add to queue. Queue handles post and return codes
-                        self._status_queue.add(data)
+                        self._status_queue.add(record)
 
                 except urllib3.exceptions.ProtocolError as e:
                     logger.error(f"ProtocolError occurred: {e!r}")

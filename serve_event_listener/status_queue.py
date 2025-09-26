@@ -4,10 +4,11 @@ import queue
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import requests
 
+from serve_event_listener.el_types import PostPayload, StatusRecord
 from serve_event_listener.http_client import post as http_post
 from serve_event_listener.probing import AppAvailabilityProbe
 
@@ -35,6 +36,8 @@ APP_PROBE_APPS = {
 class StatusQueue:
     """
     StatusQueue represents a queue of k8s pod statuses to process.
+    Queue of StatusRecord items.
+    Enriches with curl-probe and serializes to PostPayload just before sending.
     """
 
     def __init__(
@@ -54,13 +57,14 @@ class StatusQueue:
         self.token_fetcher = token_fetcher
         self.prober = prober
 
-    def add(self, status_data) -> None:
-        """Adds a status_data object to the queue."""
+    def add(self, record: StatusRecord) -> None:
+        """Enqueue a StatusRecord."""
+        self.queue.put(record)
         logger.debug(
-            "K8s release status data added to queue. Queue now has length %s",
+            "Added record for release=%s; q length now %s",
+            record.get("release"),
             self.queue.qsize() + 1,
         )
-        self.queue.put(status_data)
 
     def process(self) -> None:
         """Process the queue in a loop until a stop event is detected."""
@@ -75,10 +79,12 @@ class StatusQueue:
             try:
                 # Get the event item at the front of the queue
                 # This also removes it (pops) it from the queue
-                status_data = self.queue.get(timeout=2)  # Wait for 2 seconds
+                # Wait for 2 seconds
+                rec: StatusRecord = self.queue.get(timeout=2)
+                # status_data = self.queue.get(timeout=2)  # Wait for 2 seconds
 
-                release = status_data["release"]
-                new_status = status_data["new-status"]
+                release = rec.get("release")
+                new_status = rec.get("new-status")
 
                 if new_status == "Deleted":
                     # TODO: use the new _maybe_probe_and_annotate function.
@@ -89,7 +95,7 @@ class StatusQueue:
                     )
 
                     event_ts = datetime.strptime(
-                        status_data["event-ts"], "%Y-%m-%dT%H:%M:%S.%fZ"
+                        rec.get("event-ts"), "%Y-%m-%dT%H:%M:%S.%fZ"
                     ).replace(tzinfo=timezone.utc)
 
                     if (datetime.now(timezone.utc) - event_ts).total_seconds() < 30:
@@ -98,7 +104,7 @@ class StatusQueue:
                         logger.debug(
                             "Less than 30 secs has passed. Waiting to process this Deleted event."
                         )
-                        self.queue.put(status_data)
+                        self.queue.put(rec)
                         # Also sleep a while
                         # Note that self.queue.qsize() is not reliable so we do not use it here
                         do_wait = True
@@ -106,13 +112,16 @@ class StatusQueue:
 
                 elif new_status == "Running":
                     # TODO: check that the probe also confirms running, at least for shiny apps
-                    # But add that logic to _maybe_probe_and_annotate so that non-running/deleted apps can be returned as normal
+                    # But add that logic to _maybe_probe_and_annotate so that non-running/deleted apps
+                    # can be returned as normal
                     # Perhaps instead of hard-coding deleted and running we use the new APP_PROBE_STATUSES also here
                     pass
                 else:
                     # Non-deleted: optionally probe
                     # TODO: handle the result
-                    status_data = self._maybe_probe_and_annotate(status_data)
+                    rec = self._maybe_probe_and_annotate(rec)
+
+                payload = self._to_post_payload(rec)
 
                 headers = {
                     "Authorization": f"Token {self.token}",
@@ -121,7 +130,7 @@ class StatusQueue:
                 resp = http_post(
                     self.session,
                     self.url,
-                    data=status_data,
+                    data=payload,
                     headers=headers,
                     token_fetcher=self.token_fetcher,
                 )
@@ -162,26 +171,25 @@ class StatusQueue:
         logger.warning("Queue processing stopped")
         self.stop_event.set()
 
-    def _maybe_probe_and_annotate(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def _maybe_probe_and_annotate(self, rec: StatusRecord) -> StatusRecord:
         """Optionally run availability probe and attach results."""
         if not self.prober or not APP_PROBE_STATUSES:
-            return item
+            return rec
 
-        # Expect these keys from your StatusData -> get_post_data()
-        app_type = (item.get("app-type") or "").lower()
-        new_status = (item.get("new-status") or "").lower()
-        app_url = item.get("app-url")  # caller supplies per-app URL
+        # TODO: Expect these keys from your StatusData
+        app_type = (rec.get("app-type") or "").lower()
+        new_status = (rec.get("new-status") or "").lower()
+        app_url = rec.get("app-url")
 
         if (
             app_type not in APP_PROBE_APPS
             or new_status not in APP_PROBE_STATUSES
             or not app_url
         ):
-            return item
+            return rec
 
-        # TODO: item struct must match status data, maybe a common function or dataclass for this
         pr = self.prober.probe_url(app_url)
-        item["curl-probe"] = {
+        rec["curl-probe"] = {
             "status": pr.status,  # "Running" | "Unknown" | "NotFound"
             "port80_status": pr.port80_status,
             "note": pr.note,
@@ -191,8 +199,22 @@ class StatusQueue:
         # (Optional) Override the status when it's clearly absent:
         # If k8s says Deleted and DNS says NotFound, we can skip the 30s delay.
         if new_status == "deleted" and pr.status == "NotFound":
-            item["probe-decision"] = "deleted-confirmed"
+            rec["probe-decision"] = "deleted-confirmed"
         elif new_status == "running" and pr.status in ("Unknown", "NotFound"):
-            item["probe-decision"] = "running-inconclusive"  # keep original, but mark
+            rec["probe-decision"] = "running-inconclusive"  # keep original, but mark
 
-        return item
+        return rec
+
+    @staticmethod
+    def _to_post_payload(rec: StatusRecord) -> PostPayload:
+        """Build the API payload from a StatusRecord."""
+        payload: PostPayload = {
+            "release": rec["release"],
+            "new-status": rec.get("new-status"),
+            "event-ts": rec.get("event-ts"),
+            "event-msg": {
+                "pod-msg": rec.get("pod-msg"),
+                "container-msg": rec.get("container-msg"),
+            },
+        }
+        return payload
