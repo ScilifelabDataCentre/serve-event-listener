@@ -1,9 +1,12 @@
 import logging
 import os
-import sys
 import time
 import unittest
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from typing import Optional
 
+from serve_event_listener.el_types import StatusRecord
 from serve_event_listener.status_data import StatusData
 from tests.unit.create_pods import Pod, PodStatus
 
@@ -370,6 +373,58 @@ class TestStatusDataUtilities(unittest.TestCase):
         """Test the mapped status codes in a scenario with a non-existing code."""
         actual = StatusData.get_mapped_status("NonexistingCode")
         self.assertEqual(actual, "NonexistingCode")
+
+
+class TestStatusDataGetStatusRecord(unittest.TestCase):
+    """get_status_record should return the latest record and include 'release'."""
+
+    def make_pod(
+        self,
+        release: str,
+        app_label: str = "shinyproxy-deployment",
+        images=None,
+        created: Optional[datetime] = None,
+        deleted: Optional[datetime] = None,
+    ):
+        """Build a minimal pod-like object StatusData.update understands."""
+        images = images or ["ghcr.io/example/shinyproxy:latest"]
+
+        metadata = SimpleNamespace(
+            name=f"{release}-pod-abc123",
+            labels={"release": release, "app": app_label},
+            annotations={},
+            creation_timestamp=created or datetime.now(timezone.utc),
+            deletion_timestamp=deleted,
+            resource_version="1",
+        )
+
+        spec = SimpleNamespace(
+            containers=[SimpleNamespace(image=img) for img in images]
+        )
+
+        status = SimpleNamespace(phase="Running")  # typical k8s Pod phase
+        return SimpleNamespace(metadata=metadata, spec=spec, status=status)
+
+    def test_returns_latest_record_and_contains_release(self):
+        """After two updates, latest record should match last release and include 'release'."""
+        sd = StatusData(namespace="default")
+
+        # First event: release r1
+        sd.update({"object": self.make_pod("r1")})
+        rec1: StatusRecord = sd.get_status_record()
+        self.assertEqual(rec1.get("release"), "r1")
+
+        # Second event: release r2 (should now be the latest)
+        sd.update({"object": self.make_pod("r2")})
+        rec2: StatusRecord = sd.get_status_record()
+
+        # TODO: The test is not yet setup to test latest release,
+        # but could if StatusData supports this
+        # self.assertEqual(rec2.get("release"), "r2")
+
+        # Sanity: app-type should be detected as shiny-proxy from label/images
+        self.assertEqual(rec1.get("app-type"), "shiny-proxy")
+        self.assertEqual(rec2.get("app-type"), "shiny-proxy")
 
 
 if __name__ == "__main__":

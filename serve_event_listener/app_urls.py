@@ -40,10 +40,12 @@ def resolve_app_url(
           path:    <SHINYPROXY_PATH_PREFIX>/<release>/
     """
     app_type = (rec.get("app-type") or "").lower()
+    assert app_type is not None, "app_type should be set"
     if not app_type:
         return None
 
     release = rec.get("release")
+    assert release is not None, "release should be set"
     if not release:
         return None
 

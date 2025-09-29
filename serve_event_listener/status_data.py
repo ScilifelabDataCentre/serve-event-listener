@@ -85,7 +85,8 @@ class StatusData:
         - Tuple[str, str, str]: The status of the pod, container message, pod message
         """
         empty_message = ""
-        pod_message = status_object.message if status_object.message else empty_message
+        pod_message = getattr(status_object, "message", None) or empty_message
+        # pod_message = status_object.message if status_object.message else empty_message
 
         def process_container_statuses(container_statuses, init_containers=False):
             for container_status in container_statuses:
@@ -128,8 +129,12 @@ class StatusData:
             else:
                 return None
 
-        init_container_statuses = status_object.init_container_statuses
-        container_statuses = status_object.container_statuses
+        init_container_statuses = (
+            getattr(status_object, "init_container_statuses", []) or []
+        )
+        container_statuses = getattr(status_object, "container_statuses", []) or []
+        # init_container_statuses = status_object.init_container_statuses
+        # container_statuses = status_object.container_statuses
 
         if init_container_statuses is not None:
             result = process_container_statuses(
@@ -306,7 +311,7 @@ class StatusData:
             )
 
             app_type = _detect_app_type(pod)
-            self.status_data[release]["app-type"] = pod_message
+            self.status_data[release]["app-type"] = app_type
             logger.info("Detected this pod's app type to be = %s", app_type)
 
             if app_type:
@@ -322,6 +327,13 @@ class StatusData:
     def get_status_record(self) -> StatusRecord:
         """Return the latest per-release StatusRecord to enqueue."""
         release = self.get_latest_release()
+
+        # Note: to refactor to "get by release" here in the future, we would instead
+        # implement a _by_release function and use it here
+        # and alos move setting the release attribute into update()
+        # rec = self._by_release[release]
+        self.status_data[release]["release"] = release
+
         return self.status_data[release]
 
     def update_or_create_status(

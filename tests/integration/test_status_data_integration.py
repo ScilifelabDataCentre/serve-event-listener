@@ -56,8 +56,13 @@ class TestStatusDataUrlAttachmentIntegration(IntegrationTestCase):
         sd = StatusData(namespace=namespace)
         # Simulate a k8s watch event shape
         sd.update({"object": pod})
-        # TODO: This test fails. Add a robust check here:
-        self.assertEqual(sd.status_data.get("app-type"), "shiny-proxy")
+
+        # Verifying that app-type is set using two approaches
+        release = pod.metadata.labels.get("release")
+        self.assertIn(release, sd.status_data, f"Release {release!r} not in StatusData")
+        raw_rec = sd.status_data[release]
+        self.assertIsNotNone(raw_rec)
+        self.assertEqual(raw_rec.get("app-type"), "shiny-proxy")
 
         rec: StatusRecord = sd.get_status_record()
         self.assertEqual(
