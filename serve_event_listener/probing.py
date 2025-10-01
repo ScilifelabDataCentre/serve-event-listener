@@ -58,7 +58,7 @@ class AppAvailabilityProbe:
 
     def probe_url(self, port80_url: str) -> ProbeResult:
         """Probe a single HTTP URL and classify availability."""
-        # (c) NotFound — DNS cannot resolve
+        # NotFound — DNS cannot resolve
         if not self._dns_resolves(port80_url):
             return ProbeResult(status="NotFound", note="DNS resolution failed")
 
@@ -73,13 +73,13 @@ class AppAvailabilityProbe:
         )
         code = resp.status_code if resp is not None else None
 
-        # (a) Running — server responds OK/redirect
+        # Running — server responds OK/redirect
         if code is not None and 200 <= code < 400:
             return ProbeResult(
                 status="Running", port80_status=code, note="HTTP 2xx/3xx"
             )
 
-        # (b) Unknown — DNS ok but no success (refused/timeout/4xx/5xx)
+        # Unknown — DNS ok but no success (refused/timeout/4xx/5xx)
         return ProbeResult(
             status="Unknown",
             port80_status=code,

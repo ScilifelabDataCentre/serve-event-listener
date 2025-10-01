@@ -1,3 +1,5 @@
+"""Logic to process k8s event information into app status."""
+
 import logging
 import os
 from datetime import datetime, timezone
@@ -49,7 +51,7 @@ def _detect_app_type(pod) -> Optional[AppType]:
 
 
 class StatusData:
-    """Logic to process k8s event information into app status."""
+    """StatusData represents event and status information about a k8s app."""
 
     def __init__(self, namespace: str = "default"):
         # TODO: In the future, we will also refactor status_data to

@@ -72,8 +72,9 @@ python -m unittest discover -s tests/unit/
 
 ### Running the integration tests
 
-Start the target service (as defined by BASE_URL)
+1. Start the target service (as defined by BASE_URL)
 
+2. Then run the integration tests:
 ```bash
 RUN_INTEGRATION_TESTS=1 python -m unittest discover -v -s tests/integration/
 ```

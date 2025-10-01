@@ -96,6 +96,11 @@ class EventListener:
         """
         return self._status_data
 
+    @property
+    def client_api_ping_endpoint(self) -> str:
+        """A URL of the client target API for checking the status of the API is UP or DOWN"""
+        return BASE_URL + "/openapi/v1/are-you-there"
+
     def setup(self, **kwargs: Optional[Any]) -> None:
         """
         Sets up the EventListener object.
@@ -123,6 +128,15 @@ class EventListener:
                 timeout=self.timeout,
                 backoff_seconds=self.backoff_seconds,
             )
+
+            try:
+                # Verify that the prober works for at least a known URL,
+                test_url = self.client_api_ping_endpoint()
+                _ = self._prober.probe_url(test_url)
+            except Exception as e:
+                # Otherwise disable the probing feature
+                logger.warning("Probing disabled: baseline probe failed (%s)", e)
+                self._prober = None
 
             # StatusQueue now takes a shared session instead of post function
             self._status_queue = StatusQueue(
@@ -262,7 +276,7 @@ class EventListener:
         Returns:
         - bool: True if the status is okay, False otherwise.
         """
-        url = BASE_URL + "/openapi/v1/are-you-there"
+        url = self.client_api_ping_endpoint
         logger.debug("Verifying that the server API is up and available via %s", url)
 
         # Using the new http get function
@@ -286,9 +300,7 @@ class EventListener:
                 logger.debug("Loading kubeconfig from KUBECONFIG = %s", KUBECONFIG)
                 config.load_kube_config(KUBECONFIG)
             else:
-                logger.warning(
-                    "No KUBECONFIG provided - attempting to use default config"
-                )
+                logger.info("No KUBECONFIG provided - attempting to use default config")
                 config.incluster_config.load_incluster_config()
 
         except config.ConfigException as e:
