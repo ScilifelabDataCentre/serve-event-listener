@@ -26,6 +26,9 @@ RUNNING_PROBE_INTERVAL = 10
 DELETED_PROBE_WINDOW = 30
 DELETED_PROBE_INTERVAL = 5
 
+# Confirm Deleted only after N consecutive NXDOMAINs (NotFound)
+NXDOMAIN_CONFIRMATION_COUNT = int(os.getenv("APP_PROBE_NXDOMAIN_CONFIRM", "2"))
+
 
 def _parse_csv_env(name: str) -> set[str]:
     raw = os.getenv(name, "") or ""
