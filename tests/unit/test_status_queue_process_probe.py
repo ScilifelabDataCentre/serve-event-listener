@@ -25,6 +25,11 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         # Patch module-level config so tests are deterministic
         self.orig_statuses = set(sq_mod.APP_PROBE_STATUSES)
         self.orig_apps = set(sq_mod.APP_PROBE_APPS)
+        self.orig_running_window = sq_mod.RUNNING_PROBE_WINDOW
+        self.orig_running_interval = sq_mod.RUNNING_PROBE_INTERVAL
+        self.orig_deleted_window = sq_mod.DELETED_PROBE_WINDOW
+        self.orig_deleted_interval = sq_mod.DELETED_PROBE_INTERVAL
+
         sq_mod.APP_PROBE_STATUSES = {"running", "deleted"}
         sq_mod.APP_PROBE_APPS = {"shiny", "shiny-proxy"}
 
@@ -41,6 +46,10 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         self.sleep_patcher.stop()
         sq_mod.APP_PROBE_STATUSES = self.orig_statuses
         sq_mod.APP_PROBE_APPS = self.orig_apps
+        sq_mod.RUNNING_PROBE_WINDOW = self.orig_running_window
+        sq_mod.RUNNING_PROBE_INTERVAL = self.orig_running_interval
+        sq_mod.DELETED_PROBE_WINDOW = self.orig_deleted_window
+        sq_mod.DELETED_PROBE_INTERVAL = self.orig_deleted_interval
 
     def _run_worker_briefly(self, q: StatusQueue, dt: float = 0.05):
         t = threading.Thread(target=q.process, daemon=True)
@@ -57,8 +66,8 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         prober.probe_url.return_value = SimpleNamespace(
             status="Unknown", port80_status=None, note=""
         )
-
         q = StatusQueue(self.session, self.url, self.token, prober=prober)
+
         rec: StatusRecord = {
             "release": "r1",
             "new-status": "Running",
@@ -67,7 +76,6 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
             "app-url": "http://r1-app/",
         }
         q.add(rec)
-
         mock_post.return_value = SimpleNamespace(status_code=200)
 
         self._run_worker_briefly(q)
@@ -79,72 +87,64 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
     def test_running_shiny_probes_until_confirmed_then_posts(self, mock_post):
         """Running shiny should probe; post once probe returns Running."""
         prober = MagicMock()
-        # First attempt Unknown, second attempt Running
         prober.probe_url.side_effect = [
             SimpleNamespace(status="Unknown", port80_status=None, note=""),
             SimpleNamespace(status="Running", port80_status=200, note="ok"),
         ]
+        sq_mod.RUNNING_PROBE_INTERVAL = 0.0  # fast retry
 
-        # Set small probe interval for quick retry
-        with patch.object(sq_mod, "RUNNING_PROBE_INTERVAL", 0.0):
-            q = StatusQueue(self.session, self.url, self.token, prober=prober)
-            rec: StatusRecord = {
-                "release": "r1",
-                "new-status": "Running",
-                "event-ts": iso_now(),
-                "app-type": "shiny",
-                "app-url": "http://r1-app/",
-            }
-            q.add(rec)
-            mock_post.return_value = SimpleNamespace(status_code=200)
+        q = StatusQueue(self.session, self.url, self.token, prober=prober)
+        rec: StatusRecord = {
+            "release": "r1",
+            "new-status": "Running",
+            "event-ts": iso_now(),
+            "app-type": "shiny",
+            "app-url": "http://r1-app/",
+        }
+        q.add(rec)
+        mock_post.return_value = SimpleNamespace(status_code=200)
 
-            # Run a bit longer to allow two probe attempts
-            self._run_worker_briefly(q, dt=0.12)
+        self._run_worker_briefly(q, dt=0.12)
 
-        # One POST only, after second probe confirms Running
-        self.assertEqual(mock_post.call_count, 1)
+        self.assertEqual(mock_post.call_count, 1)  # posted once
         self.assertGreaterEqual(prober.probe_url.call_count, 2)
 
-    # Newly added test
     @patch("serve_event_listener.status_queue.http_post")
     def test_deleted_requires_two_consecutive_nxdomain(self, mock_post):
+        """Deleted confirmation requires 2× NotFound by default."""
         prober = MagicMock()
         prober.probe_url.side_effect = [
             SimpleNamespace(status="NotFound", port80_status=None, note=""),
             SimpleNamespace(status="NotFound", port80_status=None, note=""),
         ]
-        with patch.dict(
-            sq_mod.os.environ, {"APP_PROBE_NXDOMAIN_CONFIRM": "2"}, clear=False
-        ):
-            q = StatusQueue(self.session, self.url, self.token, prober=prober)
-            rec: StatusRecord = {
-                "release": "rX",
-                "new-status": "Deleted",
-                "event-ts": iso_now(),  # inside 30s window
-                "app-type": "shiny",
-                "app-url": "http://rX-app/",
-            }
-            q.add(rec)
-            mock_post.return_value = SimpleNamespace(status_code=200)
+        sq_mod.DELETED_PROBE_INTERVAL = 0.0  # fast retry
 
-            # Run enough cycles for two probes
-            with patch.object(sq_mod, "DELETED_PROBE_INTERVAL", 0.0):
-                self._run_worker_briefly(q, dt=0.12)
+        q = StatusQueue(self.session, self.url, self.token, prober=prober)
+        rec: StatusRecord = {
+            "release": "rX",
+            "new-status": "Deleted",
+            "event-ts": iso_now(),
+            "app-type": "shiny",
+            "app-url": "http://rX-app/",
+        }
+        q.add(rec)
+        mock_post.return_value = SimpleNamespace(status_code=200)
 
-        # After 2× NotFound, should post exactly once
-        self.assertEqual(mock_post.call_count, 1)
+        self._run_worker_briefly(q, dt=0.12)
+
+        self.assertEqual(mock_post.call_count, 1)  # posted after 2× NotFound
         self.assertGreaterEqual(prober.probe_url.call_count, 2)
 
-    # Newly added test
     @patch("serve_event_listener.status_queue.http_post")
     def test_deleted_probing_disabled_uses_legacy_grace(self, mock_post):
-        sq_mod.APP_PROBE_STATUSES = {"running"}  # deleted NOT enabled
+        """When 'deleted' not enabled, legacy <30s grace requeue is used."""
+        sq_mod.APP_PROBE_STATUSES = {"running"}  # disable 'deleted' probing
         prober = MagicMock()
         q = StatusQueue(self.session, self.url, self.token, prober=prober)
         rec: StatusRecord = {
             "release": "rY",
             "new-status": "Deleted",
-            "event-ts": iso_now(),  # inside 30s
+            "event-ts": iso_now(),
             "app-type": "shiny",
             "app-url": "http://rY-app/",
         }
@@ -153,44 +153,49 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         self._run_worker_briefly(q, dt=0.06)
 
         prober.probe_url.assert_not_called()
-        self.assertEqual(mock_post.call_count, 0)  # requeued due to legacy grace
+        self.assertEqual(mock_post.call_count, 0)  # requeued due to grace
         self.assertGreaterEqual(q.queue.qsize(), 1)
 
-    # TODO: Remove this test?
     @patch("serve_event_listener.status_queue.http_post")
-    def test_deleted_shiny_immediate_post_on_notfound(self, mock_post):
-        """Deleted shiny should post immediately if probe returns NotFound."""
+    def test_deleted_immediate_post_when_confirm_threshold_is_one(self, mock_post):
+        """If confirmation threshold is 1, a single NotFound posts immediately."""
         prober = MagicMock()
         prober.probe_url.return_value = SimpleNamespace(
             status="NotFound", port80_status=None, note="dns"
         )
+        sq_mod.DELETED_PROBE_INTERVAL = 0.0
+        with patch.dict(
+            sq_mod.os.environ, {"APP_PROBE_NXDOMAIN_CONFIRM": "1"}, clear=False
+        ):
+            # re-import count (only needed if you compute it once at import-time)
+            # If you read NXDOMAIN_CONFIRMATION_COUNT at module import time, reassign here:
+            sq_mod.NXDOMAIN_CONFIRMATION_COUNT = 1
 
-        q = StatusQueue(self.session, self.url, self.token, prober=prober)
-        rec: StatusRecord = {
-            "release": "r2",
-            "new-status": "Deleted",
-            "event-ts": iso_now(),
-            "app-type": "shiny",
-            "app-url": "http://r2-app/",
-        }
-        q.add(rec)
-        mock_post.return_value = SimpleNamespace(status_code=200)
+            q = StatusQueue(self.session, self.url, self.token, prober=prober)
+            rec: StatusRecord = {
+                "release": "r2",
+                "new-status": "Deleted",
+                "event-ts": iso_now(),
+                "app-type": "shiny",
+                "app-url": "http://r2-app/",
+            }
+            q.add(rec)
+            mock_post.return_value = SimpleNamespace(status_code=200)
 
-        self._run_worker_briefly(q)
+            self._run_worker_briefly(q)
 
         prober.probe_url.assert_called_once()
         self.assertEqual(mock_post.call_count, 1)
 
     @patch("serve_event_listener.status_queue.http_post")
     def test_deleted_times_out_then_posts(self, mock_post):
-        """If Deleted never confirms NotFound before 30s window, post after timeout."""
+        """If Deleted never confirms NotFound before window, post after timeout."""
         prober = MagicMock()
         prober.probe_url.return_value = SimpleNamespace(
             status="Unknown", port80_status=None, note=""
         )
-
-        # Provide an old event-ts so we are already past the 30s window
-        old_iso = iso_now(offset_sec=-40)
+        # Set event-ts in the past so we are already past the 30s window
+        old_iso = iso_now(offset_sec=-(sq_mod.DELETED_PROBE_WINDOW + 5))
 
         q = StatusQueue(self.session, self.url, self.token, prober=prober)
         rec: StatusRecord = {
@@ -205,6 +210,5 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
 
         self._run_worker_briefly(q)
 
-        # We may still attempt a single probe once; main assertion is that we posted
-        self.assertGreaterEqual(prober.probe_url.call_count, 0)
         self.assertEqual(mock_post.call_count, 1)
+        self.assertGreaterEqual(prober.probe_url.call_count, 0)
