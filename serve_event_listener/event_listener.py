@@ -131,7 +131,7 @@ class EventListener:
 
             try:
                 # Verify that the prober works for at least a known URL,
-                test_url = self.client_api_ping_endpoint()
+                test_url = self.client_api_ping_endpoint
                 _ = self._prober.probe_url(test_url)
             except Exception as e:
                 # Otherwise disable the probing feature

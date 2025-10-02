@@ -79,6 +79,24 @@ Navigate to the project directory and execute the following command to run the s
 python3 -m serve_event_listener.main --namespace <some-namespace> --label-selector <some label selector>
 ```
 
+### Running the service in other modes
+
+The program can also be run at the command line in two other modes, diagnostics and probetest.
+
+diagnostics: The dignostics mode simply prints the effective settings and exits
+```bash
+python3 -m serve_event_listener.main --mode diagnostics
+```
+
+probetest: The probe test mode performs a single-shot URL probing test against a specified URL.
+
+Arguments:
+- Required argument: --probe-url
+- Optional arguments: --probe-insecure, --probe-connect-timeout, --probe-read-timeout
+```bash
+python3 -m serve_event_listener.main --mode probetest --probe-url <url-to-probe>
+```
+
 ## Docker Container Setup
 
 ### Build the Docker Image

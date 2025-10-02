@@ -242,7 +242,9 @@ class StatusQueue:
                 if q_empty_log <= 2:
                     logger.debug("Nothing to do. The queue is empty.")
                 elif q_empty_log == 3:
-                    logger.debug("Nothing to do. Suppressing empty-queue logs.")
+                    logger.debug(
+                        "Nothing to do. The queue is empty. Suppressing this message for now."
+                    )
                 q_empty_log += 1
                 # pass, continue looping if the queue is empty
 
