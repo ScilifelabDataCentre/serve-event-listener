@@ -60,7 +60,7 @@ export APP_PROBE_STATUSES=Running,Deleted
 An environment variable APP_PROBE_APPS controls the app types that the URL probing controls. Currently only available for shiny and shiny-proxy (default).
 
 ```bash
-export APP_PROBE_STATUSES=shiny,shiny-proxy
+export APP_PROBE_APPS=shiny,shiny-proxy
 ```
 
 There are additional environment variables with sensible defaults that control URL resolution. See app_urls.py for more information.

@@ -218,7 +218,7 @@ class StatusQueue:
                     body = resp.text or ""
                     if resp.status_code == 404 and "OK. OBJECT_NOT_FOUND." in body:
                         logger.debug(
-                            "Response 404 treated as OK (object not found). Could be renamed or removed. release=%s body=%s",
+                            "Response 404 treated as OK (object not found), renamed or removed? release=%s body=%s",
                             release,
                             body[:200],
                         )

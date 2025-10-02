@@ -196,16 +196,22 @@ def run(namespace: str, label_selector: str) -> None:
         label_selector (str): Label selector used to filter pods.
     """
 
+    # only for displaying startup configuration
+    APP_PROBE_STATUSES = os.getenv("APP_PROBE_STATUSES", default="")
+
     start_message = (
         "\n\n\t{}\n\t"
         "Starting Kubernetes Event Listener \n\t"
         "Namespace: {}\n\t"
         "Label Selector: {}\n\t"
+        "App probing for statuses: {}\n\t"
         "debug: {}\n\t"
         "{}\n"
     )
     logger.info(
-        start_message.format("#" * 40, namespace, label_selector, DEBUG, "#" * 40)
+        start_message.format(
+            "#" * 40, namespace, label_selector, APP_PROBE_STATUSES, DEBUG, "#" * 40
+        )
     )
 
     event_listener = EventListener(namespace, label_selector)
