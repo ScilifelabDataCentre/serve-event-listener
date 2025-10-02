@@ -166,7 +166,7 @@ class TestPodProcessing(unittest.TestCase):
         This occurs when a user changes the image to an invalid image and then valid image.
         """
 
-        # TODO: Consider re-enabling this test by for example creating a parallel data structure
+        # Note: Consider re-enabling this test by for example creating a parallel data structure
         # containing a list of k8s pods and statuses.
 
         release = "r-valid-invalid-images"

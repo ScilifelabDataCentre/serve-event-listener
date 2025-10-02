@@ -30,8 +30,7 @@ class TestAppAvailabilityProbeIntegration(IntegrationTestCase):
             # Hit the /api/are-you-there/ endpoint
             url = f'{url.rstrip("/")}/api/are-you-there/'
         res = self.probe.probe_url(url)
-        # Most healthy bases should be 2xx/3xx → Running. If your base needs auth and
-        # returns 401, adjust this assertion or provide PROBE_URL that is public.
+        # Most healthy bases should be 2xx/3xx → Running
         self.assertEqual(res.status, "Running", f"Unexpected result for {url}: {res}")
 
     def test_notfound_on_nonexistent_host(self):
@@ -41,6 +40,6 @@ class TestAppAvailabilityProbeIntegration(IntegrationTestCase):
 
     def test_unknown_on_local_refused(self):
         """Returns Unknown when host resolves but connection is refused."""
-        # Port 9 is typically closed; adjust if your CI environment differs.
+        # Port 9 is typically closed; adjust as needed
         res = self.probe.probe_url("http://127.0.0.1:9/")
         self.assertEqual(res.status, "Unknown")

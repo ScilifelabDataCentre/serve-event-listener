@@ -185,10 +185,10 @@ class EventListener:
                         self.resource_version = (
                             self.get_resource_version_from_pod_list()
                         )
+                        logger.debug(
+                            "Done getting resource version: %s", self.resource_version
+                        )
 
-                    logger.debug(
-                        "Done getting resource version: %s", self.resource_version
-                    )
                     # Stream events with resource_version
                     # Use a timeout of 4 minutes to avoid staleness
                     for event in self.watch.stream(
@@ -196,6 +196,7 @@ class EventListener:
                         namespace=self.namespace,
                         label_selector=self.label_selector,
                         resource_version=self.resource_version,
+                        # server-side timeout, will be honored because watch = True
                         timeout_seconds=240,
                     ):
                         # Update resource_version to latest
@@ -329,8 +330,11 @@ class EventListener:
         """
         pods = self.client.list_namespaced_pod(
             namespace=self.namespace,
-            timeout_seconds=120,
             watch=False,
+            # client-side timeout: (connect_timeout, read_timeout)
+            _request_timeout=(10, 30),
+            # server-side timeout (may not be honored)
+            timeout_seconds=30,
         )
         resource_version = pods.metadata.resource_version
         return resource_version
@@ -345,8 +349,11 @@ class EventListener:
             api_response = self.client.list_namespaced_pod(
                 namespace=self.namespace,
                 limit=5000,
-                timeout_seconds=120,
                 watch=False,
+                # client-side timeout: (connect_timeout, read_timeout)
+                _request_timeout=(30, 60),
+                # server-side timeout (may not be honored)
+                timeout_seconds=120,
             )
 
             for pod in api_response.items:
@@ -379,7 +386,7 @@ class EventListener:
         """
         data = {"username": USERNAME, "password": PASSWORD}
 
-        # Use the shared session and your central call options.
+        # Use the shared session and the central call options.
         # NOTE: token_fetcher=None — we don't want the client to recurse to fetch a token
         # while we're already fetching one.
         response: Optional[requests.Response] = http_post(

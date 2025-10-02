@@ -200,8 +200,11 @@ class StatusData:
             # label_selector=f"app={deployment_name}",
             label_selector=f"app={release}",
             limit=response_limit,
-            timeout_seconds=120,
             watch=False,
+            # client-side timeout: (connect_timeout, read_timeout)
+            _request_timeout=(10, 30),
+            # server-side timeout (may not be honored)
+            timeout_seconds=30,
         )
 
         phases = []
@@ -235,7 +238,13 @@ class StatusData:
 
         try:
             api_response = self.k8s_api_client.list_namespaced_pod(
-                self.namespace, limit=response_limit, timeout_seconds=120, watch=False
+                self.namespace,
+                limit=response_limit,
+                watch=False,
+                # client-side timeout: (connect_timeout, read_timeout)
+                _request_timeout=(10, 30),
+                # server-side timeout (may not be honored)
+                timeout_seconds=30,
             )
 
             for pod in api_response.items:

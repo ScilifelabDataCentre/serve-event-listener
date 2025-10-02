@@ -29,11 +29,14 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         self.orig_running_interval = sq_mod.RUNNING_PROBE_INTERVAL
         self.orig_deleted_window = sq_mod.DELETED_PROBE_WINDOW
         self.orig_deleted_interval = sq_mod.DELETED_PROBE_INTERVAL
+        self.orig_nx_confirm = getattr(sq_mod, "NXDOMAIN_CONFIRMATION_COUNT", 2)
 
+        # deterministic defaults for each test
         sq_mod.APP_PROBE_STATUSES = {"running", "deleted"}
         sq_mod.APP_PROBE_APPS = {"shiny", "shiny-proxy"}
+        sq_mod.NXDOMAIN_CONFIRMATION_COUNT = 2
 
-        # Speed up tests
+        # speed up tests
         self.sleep_patcher = patch(
             "serve_event_listener.status_queue.time.sleep", return_value=None
         )
@@ -50,6 +53,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         sq_mod.RUNNING_PROBE_INTERVAL = self.orig_running_interval
         sq_mod.DELETED_PROBE_WINDOW = self.orig_deleted_window
         sq_mod.DELETED_PROBE_INTERVAL = self.orig_deleted_interval
+        sq_mod.NXDOMAIN_CONFIRMATION_COUNT = self.orig_nx_confirm
 
     def _run_worker_briefly(self, q: StatusQueue, dt: float = 0.05):
         t = threading.Thread(target=q.process, daemon=True)
@@ -111,13 +115,14 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
 
     @patch("serve_event_listener.status_queue.http_post")
     def test_deleted_requires_two_consecutive_nxdomain(self, mock_post):
-        """Deleted confirmation requires 2× NotFound by default."""
+        """Deleted confirmation requires 2x NotFound by default."""
         prober = MagicMock()
         prober.probe_url.side_effect = [
             SimpleNamespace(status="NotFound", port80_status=None, note=""),
             SimpleNamespace(status="NotFound", port80_status=None, note=""),
         ]
         sq_mod.DELETED_PROBE_INTERVAL = 0.0  # fast retry
+        sq_mod.NXDOMAIN_CONFIRMATION_COUNT = 2
 
         q = StatusQueue(self.session, self.url, self.token, prober=prober)
         rec: StatusRecord = {
@@ -132,7 +137,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
 
         self._run_worker_briefly(q, dt=0.12)
 
-        self.assertEqual(mock_post.call_count, 1)  # posted after 2× NotFound
+        self.assertEqual(mock_post.call_count, 1)  # posted after 2x NotFound
         self.assertGreaterEqual(prober.probe_url.call_count, 2)
 
     @patch("serve_event_listener.status_queue.http_post")
@@ -167,8 +172,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         with patch.dict(
             sq_mod.os.environ, {"APP_PROBE_NXDOMAIN_CONFIRM": "1"}, clear=False
         ):
-            # re-import count (only needed if you compute it once at import-time)
-            # If you read NXDOMAIN_CONFIRMATION_COUNT at module import time, reassign here:
+            # reassign
             sq_mod.NXDOMAIN_CONFIRMATION_COUNT = 1
 
             q = StatusQueue(self.session, self.url, self.token, prober=prober)
@@ -212,3 +216,47 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
 
         self.assertEqual(mock_post.call_count, 1)
         self.assertGreaterEqual(prober.probe_url.call_count, 0)
+
+
+@patch("serve_event_listener.status_queue.http_post")
+@patch("serve_event_listener.status_queue.logger")
+def test_post_404_object_not_found_logged_as_debug(mock_logger, mock_post):
+    """404 with 'OK. OBJECT_NOT_FOUND.' body should log debug, not a POST-failed warning."""
+    mock_post.return_value = SimpleNamespace(
+        status_code=404, text="OK. OBJECT_NOT_FOUND."
+    )
+
+    # disable probing so we post immediately
+    orig_statuses = set(sq_mod.APP_PROBE_STATUSES)
+    sq_mod.APP_PROBE_STATUSES = set()
+
+    try:
+        session = MagicMock(spec=requests.Session)
+        q = StatusQueue(session, "https://api.example/app-status/", "T0")
+
+        rec: StatusRecord = {
+            "release": "r404",
+            "new-status": "Running",  # any non-probed status
+            "event-ts": "2025-01-01T00:00:00.000000Z",
+        }
+        q.add(rec)
+
+        t = threading.Thread(target=q.process, daemon=True)
+        t.start()
+        time.sleep(0.05)
+        q.stop_processing()
+        t.join(timeout=1)
+
+        # We should have logged a debug line mentioning the 404 handling
+        debug_msgs = " | ".join(
+            str(call.args[0]) for call in mock_logger.debug.call_args_list
+        )
+        assert "404 treated as OK" in debug_msgs
+
+        # We should NOT have logged a warning that says "POST failed" (other warnings may exist, e.g., stop message)
+        warn_msgs = " | ".join(
+            str(call.args[0]) for call in mock_logger.warning.call_args_list
+        )
+        assert "POST failed" not in warn_msgs
+    finally:
+        sq_mod.APP_PROBE_STATUSES = orig_statuses

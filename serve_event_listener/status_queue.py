@@ -108,27 +108,29 @@ class StatusQueue:
     def process(self) -> None:
         """Process the queue in a loop until stop event is set.
 
-        Probing is driven by config:
-        - Only for statuses listed in APP_PROBE_STATUSES
-        - Only for app types in APP_PROBE_APPS
-        - Running (shiny/shiny-proxy): probe until confirmed (<=180s), then post
-        - Deleted (shiny/shiny-proxy): confirm NotFound (<=30s), else time-out and post
+        Rules:
+          - Probing is fully gated by APP_PROBE_STATUSES and APP_PROBE_APPS.
+          - Running (shiny/shiny-proxy): confirm 'Running' within RUNNING_PROBE_WINDOW/INTERVAL.
+          - Deleted (shiny/shiny-proxy): require NXDOMAIN NotFound N times within
+            DELETED_PROBE_WINDOW/INTERVAL, then confirm 'Deleted'.
+          - If probing is disabled for 'deleted', keep legacy <30s requeue grace.
         """
-        log_cnt_q_is_empty = 0
+        # Track logging of empty queue
+        q_empty_log = 0
 
         while not self.stop_event.is_set():
             try:
-                # Get the event item at the front of the queue
-                # This also removes it (pops) it from the queue
-                # Wait for 2 seconds
+                # get the event item at the front of the queue.
+                # this also removes it (pops) it from the queue.
+                # wait for 2 seconds.
                 rec: StatusRecord = self.queue.get(timeout=2)
                 release = rec.get("release")
                 status_lc = (rec.get("new-status") or "").lower()
 
-                posted = False
+                # default action: proceed to POST (may be flipped to requeue)
                 requeue = False
 
-                # Probing path (gated)
+                # probing path (gated)
                 if status_lc in {"running", "deleted"} and self._probe_enabled_for(rec):
 
                     logger.info(
@@ -137,15 +139,11 @@ class StatusQueue:
                         status_lc,
                     )
 
-                    # Ensure we have a deadline for this record
-                    # TODO: deadline = self._ensure_probe_deadline(rec)
-                    deadline_epoch = rec.get("_probe-deadline-epoch")
-
-                    now_epoch = time.time()
-                    if deadline_epoch is not None and now_epoch < float(deadline_epoch):
-                        # We are still within the probe window
-                        if self._should_probe_now(rec):
-                            # Try a probe attempt
+                    deadline_epoch = self._ensure_deadline(rec, status_lc)
+                    if deadline_epoch is not None and time.time() < deadline_epoch:
+                        # still inside the probe window
+                        if self._allow_probe_now(rec):
+                            # try a probe attempt
                             app_url = rec.get("app-url")  # type: ignore[assignment]
                             pr = self.prober.probe_url(app_url)  # type: ignore[arg-type]
                             rec["curl-probe"] = {
@@ -155,59 +153,48 @@ class StatusQueue:
                                 "url": app_url,
                             }
 
-                            if status_lc == "deleted":
-
-                                # TODO: check this
+                            if status_lc == "running":
+                                # confirm only on probe Running; otherwise keep probing
+                                if pr.status != "Running":
+                                    requeue = True
+                                    self._schedule_next_probe(rec, status_lc)
+                            else:  # deleted
+                                # Deleted only confirms on NXDOMAIN NotFound; require N consecutive
                                 if pr.status == "NotFound":
-                                    # Confirmed gone → post now
-                                    pass  # proceed to POST
+                                    nx = int(rec.get("_nx_consec", 0)) + 1
+                                    rec["_nx_consec"] = nx
+                                    if nx < NXDOMAIN_CONFIRMATION_COUNT:
+                                        requeue = True
+                                        self._schedule_next_probe(rec, status_lc)
                                 else:
-                                    # Not yet gone → requeue until timeout
+                                    # reset consecutive counter and keep probing
+                                    if "_nx_consec" in rec:
+                                        rec["_nx_consec"] = 0
                                     requeue = True
-                                    self._schedule_next_probe(rec)
-                            elif status_lc == "running":
-
-                                if pr.status == "Running":
-                                    # Confirmed up → post now
-                                    pass
-                                else:
-                                    # Not yet responsive → requeue until timeout
-                                    requeue = True
-                                    self._schedule_next_probe(rec)
+                                    self._schedule_next_probe(rec, status_lc)
                         else:
-                            # Not time yet to probe; requeue to allow other items to proceed
+                            # not time yet; requeue to avoid blocking
                             requeue = True
-                    else:
-                        # Past deadline or no deadline → proceed to POST as-is (with any last probe info)
-                        pass
+                    # else: past deadline → proceed to POST as-is
 
-                # Deleted default grace if probing is disabled for Deleted
+                # legacy grace for Deleted when probing is disabled for Deleted
                 if (
-                    not posted
-                    and not requeue
-                    and status_lc == "deleted"
+                    status_lc == "deleted"
                     and "deleted" not in APP_PROBE_STATUSES
+                    and not requeue
                 ):
-                    # Keep existing <30s requeue behavior
-                    event_ts = self._parse_event_ts(rec.get("event-ts"))
-                    if event_ts:
-                        if (self._utcnow() - event_ts).total_seconds() < 30:
-                            requeue = True
-
-                # TODO: Need to change Deleted logic, should always wait mandatory delay,
-                # and for probed apps, should post Unknown if
-                # Maybe deleted does not need to be probed except for at the end.
-                # TODO: Modify test of deleted
+                    evt = self._parse_event_ts(rec.get("event-ts"))
+                    if evt and (self._utcnow() - evt).total_seconds() < 30:
+                        requeue = True
 
                 if requeue:
-                    # Requeue and yield the CPU briefly
                     self.queue.task_done()
                     self.queue.put(rec)
-                    time.sleep(min(RUNNING_PROBE_INTERVAL, DELETED_PROBE_INTERVAL, 0.5))
-                    # time.sleep(min(PROBE_INTERVAL_SECONDS, 0.5))
+                    # yield briefly; actual delay is handled by the next-epoch throttle
+                    time.sleep(0.01)
                     continue
 
-                # Build payload and POST
+                # build payload and POST
                 payload = self._to_post_payload(rec)
                 headers = {
                     "Authorization": f"Token {self.token}",
@@ -225,15 +212,22 @@ class StatusQueue:
 
                 if resp is None:
                     logger.warning(
-                        "POST failed: transport error (None) for release=%s", release
+                        "POST failed: transport error (None) release=%s", release
                     )
                 elif resp.status_code >= 400:
-                    # TODO: treat 404 and body containing "OK. OBJECT_NOT_FOUND." as not error.
-                    logger.warning(
-                        "POST failed: %s body=%s",
-                        resp.status_code,
-                        (resp.text or "")[:200],
-                    )
+                    body = resp.text or ""
+                    if resp.status_code == 404 and "OK. OBJECT_NOT_FOUND." in body:
+                        logger.debug(
+                            "Response 404 treated as OK (object not found). Could be renamed or removed. release=%s body=%s",
+                            release,
+                            body[:200],
+                        )
+                    else:
+                        logger.warning(
+                            "POST failed: %s body=%s",
+                            resp.status_code,
+                            body[:200],
+                        )
                 else:
                     logger.debug("POST ok: %s (%s)", resp.status_code, release)
 
@@ -242,15 +236,15 @@ class StatusQueue:
                     release,
                     status_lc,
                 )
-                log_cnt_q_is_empty = 0
+                q_empty_log = 0
 
             except Empty:
-                if log_cnt_q_is_empty <= 2:
+                if q_empty_log <= 2:
                     logger.debug("Nothing to do. The queue is empty.")
-                elif log_cnt_q_is_empty == 3:
+                elif q_empty_log == 3:
                     logger.debug("Nothing to do. Suppressing empty-queue logs.")
-                log_cnt_q_is_empty += 1
-                # pass  # Continue looping if the queue is empty
+                q_empty_log += 1
+                # pass, continue looping if the queue is empty
 
     def stop_processing(self) -> None:
         """Stop processing the queue."""
@@ -314,7 +308,6 @@ class StatusQueue:
         if not iso_ts:
             return None
         try:
-            # Expecting "%Y-%m-%dT%H:%M:%S.%fZ"
             return datetime.strptime(iso_ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
                 tzinfo=timezone.utc
             )
@@ -322,51 +315,49 @@ class StatusQueue:
             return None
 
     @staticmethod
-    def _probe_deadline_seconds(app_type: str, status_lc: str) -> int:
-        """Return max probe window in seconds for a (app_type, status)."""
-        if app_type in {"shiny", "shiny-proxy"}:
-            if status_lc == "running":
-                return RUNNING_PROBE_WINDOW
-            if status_lc == "deleted":
-                return DELETED_PROBE_WINDOW
-        return 0
+    def _probe_cfg_for(status_lc: str) -> tuple[int, float]:
+        """Return (window_seconds, interval_seconds) for a status."""
+        if status_lc == "running":
+            return RUNNING_PROBE_WINDOW, float(RUNNING_PROBE_INTERVAL)
+        if status_lc == "deleted":
+            return DELETED_PROBE_WINDOW, float(DELETED_PROBE_INTERVAL)
+        return 0, 0.0
 
     def _probe_enabled_for(self, rec: StatusRecord) -> bool:
-        """Should we probe this record at all (per config + fields)?"""
+        """Only probe when config & fields allow it."""
         if not self.prober or not APP_PROBE_STATUSES:
             return False
         app_type = (rec.get("app-type") or "").lower()
         status_lc = (rec.get("new-status") or "").lower()
         app_url = rec.get("app-url")
         return (
-            app_type in APP_PROBE_APPS
-            and status_lc in APP_PROBE_STATUSES
+            status_lc in APP_PROBE_STATUSES
+            and app_type in APP_PROBE_APPS
             and bool(app_url)
         )
 
-    def _ensure_probe_deadline(self, rec: StatusRecord) -> Optional[datetime]:
-        """Ensure a per-record deadline exists; return it (or None if not applicable)."""
-        app_type = (rec.get("app-type") or "").lower()
-        status_lc = (rec.get("new-status") or "").lower()
-        window = self._probe_deadline_seconds(app_type, status_lc)
+    def _ensure_deadline(self, rec: StatusRecord, status_lc: str) -> Optional[float]:
+        """Ensure a per-record deadline epoch is stored; return it (or None if not applicable)."""
+        window, _ = self._probe_cfg_for(status_lc)
         if window <= 0:
             return None
-
-        # Determine start point: event-ts or now if absent
+        if "_probe-deadline-epoch" in rec:
+            return float(rec["_probe-deadline-epoch"])  # type: ignore[index]
         started_at = self._parse_event_ts(rec.get("event-ts")) or self._utcnow()
         deadline = started_at + timedelta(seconds=window)
+        rec["_probe-deadline-epoch"] = deadline.timestamp()  # transient
+        return float(rec["_probe-deadline-epoch"])  # type: ignore[index]
 
-        # Store as ISO for diagnostics and as epoch for quick comparisons
-        if "_probe-deadline-iso" not in rec:
-            rec["_probe-deadline-iso"] = deadline.isoformat()
-        rec["_probe-deadline-epoch"] = deadline.timestamp()
-        return deadline
-
-    def _should_probe_now(self, rec: StatusRecord) -> bool:
-        """Throttle probe attempts; true if it's time to try again."""
+    def _allow_probe_now(self, rec: StatusRecord) -> bool:
+        """Throttle attempts via _probe-next-epoch (transient)."""
         next_epoch = rec.get("_probe-next-epoch")
-        now = time.time()
-        return (next_epoch is None) or (now >= float(next_epoch))
+        return (next_epoch is None) or (time.time() >= float(next_epoch))
 
-    def _schedule_next_probe(self, rec: StatusRecord) -> None:
-        rec["_probe-next-epoch"] = time.time() + 1  # TODO: PROBE_INTERVAL_SECONDS
+    def _schedule_next_probe(self, rec: StatusRecord, status_lc: str) -> float:
+        """Set the next time we may probe this record, per status interval."""
+        _, interval = self._probe_cfg_for(status_lc)
+        next_epoch = time.time() + max(0.0, float(interval))
+        # mutate the record in place by setting a transient field
+        rec["_probe-next-epoch"] = next_epoch
+        # also return it for convenience
+        return next_epoch
