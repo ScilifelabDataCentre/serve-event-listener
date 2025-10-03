@@ -56,16 +56,23 @@ class AppAvailabilityProbe:
         except socket.gaierror:
             return False
 
-    def probe_url(self, port80_url: str) -> ProbeResult:
+    def probe_url(self, port80_url: str, headers: dict | None = None) -> ProbeResult:
         """Probe a single HTTP URL and classify availability."""
         # NotFound — DNS cannot resolve
         if not self._dns_resolves(port80_url):
+            logger.info(
+                "Skipping URL probing because DNS resolution failed for url %s",
+                port80_url,
+            )
             return ProbeResult(status="NotFound", note="DNS resolution failed")
 
         # Try GET; http_get returns None on network errors/timeouts
+        logger.debug("Probing URL: %s", port80_url)
+
         resp = http_get(
             self.session,
             port80_url,
+            headers=headers,
             verify=self.verify_tls,
             timeout=self.timeout,
             backoff_seconds=self.backoff_seconds,

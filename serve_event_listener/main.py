@@ -92,6 +92,10 @@ def parse_args():
         default=10.0,
         help="read timeout (s) for --mode=probetest",
     )
+    parser.add_argument(
+        "--probe-host-header",
+        help="override Host header for --mode=probetest (useful with host-based routing)",
+    )
     return parser.parse_args()
 
 
@@ -171,9 +175,9 @@ def _run_probetest(args) -> None:
     )
 
     logger.info("running probe test for: %s", args.probe_url)
-    pr = prober.probe_url(args.probe_url)
+    headers = {"Host": args.probe_host_header} if args.probe_host_header else None
+    pr = prober.probe_url(args.probe_url, headers=headers)
 
-    # human-friendly summary
     logger.info(
         "probe result: status=%s http=%s note=%s url=%s",
         pr.status,  # "Running" | "Unknown" | "NotFound"

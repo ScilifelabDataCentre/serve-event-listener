@@ -23,6 +23,7 @@ def iso_now(offset_sec: float = 0.0) -> str:
 class TestStatusQueueProcessProbe(unittest.TestCase):
     def setUp(self):
         # Patch module-level config so tests are deterministic
+        self.orig_tick = sq_mod.PROCESS_TICK_SECONDS
         self.orig_statuses = set(sq_mod.APP_PROBE_STATUSES)
         self.orig_apps = set(sq_mod.APP_PROBE_APPS)
         self.orig_running_window = sq_mod.RUNNING_PROBE_WINDOW
@@ -37,6 +38,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         sq_mod.NXDOMAIN_CONFIRMATION_COUNT = 2
 
         # speed up tests
+        sq_mod.PROCESS_TICK_SECONDS = 0.01
         self.sleep_patcher = patch(
             "serve_event_listener.status_queue.time.sleep", return_value=None
         )
@@ -47,6 +49,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
 
     def tearDown(self):
         self.sleep_patcher.stop()
+        sq_mod.PROCESS_TICK_SECONDS = self.orig_tick
         sq_mod.APP_PROBE_STATUSES = self.orig_statuses
         sq_mod.APP_PROBE_APPS = self.orig_apps
         sq_mod.RUNNING_PROBE_WINDOW = self.orig_running_window

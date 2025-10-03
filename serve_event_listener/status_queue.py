@@ -29,6 +29,8 @@ DELETED_PROBE_INTERVAL = 5
 # Confirm Deleted only after N consecutive NXDOMAINs (NotFound)
 NXDOMAIN_CONFIRMATION_COUNT = int(os.getenv("APP_PROBE_NXDOMAIN_CONFIRM", "2"))
 
+PROCESS_TICK_SECONDS = 2.0
+
 
 def _parse_csv_env(name: str) -> set[str]:
     raw = os.getenv(name, "") or ""
@@ -118,12 +120,21 @@ class StatusQueue:
         # Track logging of empty queue
         q_empty_log = 0
 
+        PERIOD = PROCESS_TICK_SECONDS
+
+        next_tick = time.monotonic()
         while not self.stop_event.is_set():
+            # sleep until the next tick, but wake early if stop_event is set
+            self.stop_event.wait(max(0.0, next_tick - time.monotonic()))
+            next_tick += PERIOD
+
             try:
                 # get the event item at the front of the queue.
                 # this also removes it (pops) it from the queue.
                 # wait for 2 seconds.
-                rec: StatusRecord = self.queue.get(timeout=2)
+                # rec: StatusRecord = self.queue.get(timeout=2)
+                rec: StatusRecord = self.queue.get_nowait()
+
                 release = rec.get("release")
                 status_lc = (rec.get("status") or "").lower()
 
