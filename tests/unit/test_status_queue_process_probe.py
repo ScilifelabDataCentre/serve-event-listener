@@ -74,7 +74,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
 
         rec: StatusRecord = {
             "release": "r1",
-            "new-status": "Running",
+            "status": "Running",
             "event-ts": iso_now(),
             "app-type": "shiny",
             "app-url": "http://r1-app/",
@@ -100,7 +100,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         q = StatusQueue(self.session, self.url, self.token, prober=prober)
         rec: StatusRecord = {
             "release": "r1",
-            "new-status": "Running",
+            "status": "Running",
             "event-ts": iso_now(),
             "app-type": "shiny",
             "app-url": "http://r1-app/",
@@ -127,7 +127,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         q = StatusQueue(self.session, self.url, self.token, prober=prober)
         rec: StatusRecord = {
             "release": "rX",
-            "new-status": "Deleted",
+            "status": "Deleted",
             "event-ts": iso_now(),
             "app-type": "shiny",
             "app-url": "http://rX-app/",
@@ -148,7 +148,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         q = StatusQueue(self.session, self.url, self.token, prober=prober)
         rec: StatusRecord = {
             "release": "rY",
-            "new-status": "Deleted",
+            "status": "Deleted",
             "event-ts": iso_now(),
             "app-type": "shiny",
             "app-url": "http://rY-app/",
@@ -178,7 +178,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
             q = StatusQueue(self.session, self.url, self.token, prober=prober)
             rec: StatusRecord = {
                 "release": "r2",
-                "new-status": "Deleted",
+                "status": "Deleted",
                 "event-ts": iso_now(),
                 "app-type": "shiny",
                 "app-url": "http://r2-app/",
@@ -204,7 +204,7 @@ class TestStatusQueueProcessProbe(unittest.TestCase):
         q = StatusQueue(self.session, self.url, self.token, prober=prober)
         rec: StatusRecord = {
             "release": "r3",
-            "new-status": "Deleted",
+            "status": "Deleted",
             "event-ts": old_iso,
             "app-type": "shiny",
             "app-url": "http://r3-app/",
@@ -236,7 +236,7 @@ def test_post_404_object_not_found_logged_as_debug(mock_logger, mock_post):
 
         rec: StatusRecord = {
             "release": "r404",
-            "new-status": "Running",  # any non-probed status
+            "status": "Running",  # any non-probed status
             "event-ts": "2025-01-01T00:00:00.000000Z",
         }
         q.add(rec)

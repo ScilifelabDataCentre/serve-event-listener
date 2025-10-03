@@ -28,7 +28,7 @@ class TestAppUrlResolverIntegration(IntegrationTestCase):
         # Minimal StatusRecord; resolver only needs release/app-type/namespace
         self.rec: StatusRecord = {
             "release": release,
-            "new-status": "Running",
+            "status": "Running",
             "event-ts": "2025-09-26T00:00:00.000000Z",
             "app-type": "shiny-proxy",
             "namespace": namespace,

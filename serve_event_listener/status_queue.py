@@ -125,7 +125,7 @@ class StatusQueue:
                 # wait for 2 seconds.
                 rec: StatusRecord = self.queue.get(timeout=2)
                 release = rec.get("release")
-                status_lc = (rec.get("new-status") or "").lower()
+                status_lc = (rec.get("status") or "").lower()
 
                 # default action: proceed to POST (may be flipped to requeue)
                 requeue = False
@@ -195,7 +195,15 @@ class StatusQueue:
                     continue
 
                 # build payload and POST
+                if not rec.get("status"):
+                    logger.error(
+                        "record missing status before POST; release=%s keys=%s",
+                        rec.get("release"),
+                        list(rec.keys()),
+                    )
+
                 payload = self._to_post_payload(rec)
+                logger.debug("POST-ing to client server, data: %s", payload)
                 headers = {
                     "Authorization": f"Token {self.token}",
                     "Content-Type": "application/json",
@@ -259,12 +267,12 @@ class StatusQueue:
             return rec
 
         app_type = (rec.get("app-type") or "").lower()
-        new_status = (rec.get("new-status") or "").lower()
+        status = (rec.get("status") or "").lower()
         app_url = rec.get("app-url")
 
         if (
             app_type not in APP_PROBE_APPS
-            or new_status not in APP_PROBE_STATUSES
+            or status not in APP_PROBE_STATUSES
             or not app_url
         ):
             return rec
@@ -278,9 +286,9 @@ class StatusQueue:
         }
 
         # Optional decisions for callers to read
-        if new_status == "deleted" and pr.status == "NotFound":
+        if status == "deleted" and pr.status == "NotFound":
             rec["probe-decision"] = "deleted-confirmed"
-        elif new_status == "running" and pr.status in ("Unknown", "NotFound"):
+        elif status == "running" and pr.status in ("Unknown", "NotFound"):
             rec["probe-decision"] = "running-inconclusive"
 
         return rec
@@ -288,9 +296,19 @@ class StatusQueue:
     @staticmethod
     def _to_post_payload(rec: StatusRecord) -> PostPayload:
         """Build the API payload from a StatusRecord."""
+        # verify required values
+        release_val = rec.get("release")
+        status_val = rec.get("status")
+        if not release_val:
+            raise ValueError("missing release")
+        if not status_val:
+            raise ValueError(
+                f"missing status (for new-status) for release={rec.get('release')}"
+            )
+
         payload: PostPayload = {
-            "release": rec["release"],
-            "new-status": rec.get("new-status"),
+            "release": release_val,
+            "new-status": status_val,
             "event-ts": rec.get("event-ts"),
             "event-msg": {
                 "pod-msg": rec.get("pod-msg"),
@@ -330,7 +348,7 @@ class StatusQueue:
         if not self.prober or not APP_PROBE_STATUSES:
             return False
         app_type = (rec.get("app-type") or "").lower()
-        status_lc = (rec.get("new-status") or "").lower()
+        status_lc = (rec.get("status") or "").lower()
         app_url = rec.get("app-url")
         return (
             status_lc in APP_PROBE_STATUSES

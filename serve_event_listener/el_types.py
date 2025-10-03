@@ -53,7 +53,7 @@ PostPayload = TypedDict(
     "PostPayload",
     {
         "release": str,
-        "new-status": Optional[Status],
+        "new-status": Status,
         "event-msg": EventMsg,
         "event-ts": Optional[str],  # ISO8601 or None
         "token": str,

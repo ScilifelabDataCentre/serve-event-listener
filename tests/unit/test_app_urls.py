@@ -10,7 +10,7 @@ class TestResolveAppUrl(unittest.TestCase):
     def setUp(self):
         self.rec: StatusRecord = {
             "release": "sp-status",
-            "new-status": "Running",
+            "status": "Running",
             "event-ts": "2025-09-26T12:00:00.000000Z",
             "app-type": "shiny-proxy",
             "namespace": "default",

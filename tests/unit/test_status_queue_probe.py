@@ -20,7 +20,7 @@ def make_record(
     """Build a minimal StatusRecord for tests."""
     rec: StatusRecord = {
         "release": release,
-        "new-status": status,  # internal key
+        "status": status,
         "event-ts": "2025-09-26T12:00:00.000000Z",
     }
     if app_type is not None:
@@ -88,7 +88,7 @@ class TestStatusQueueMaybeProbeAnnotateSkips(unittest.TestCase):
         self.q.prober.probe_url.assert_not_called()
 
     def test_skip_when_status_not_configured(self):
-        """new-status not in APP_PROBE_STATUSES should skip probing."""
+        """status not in APP_PROBE_STATUSES should skip probing."""
         sq.APP_PROBE_STATUSES = {"deleted"}  # running not enabled
         self.q.prober = MagicMock()
         rec = make_record(

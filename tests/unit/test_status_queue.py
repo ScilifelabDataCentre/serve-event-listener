@@ -23,7 +23,7 @@ class TestStatusQueue(unittest.TestCase):
         q = StatusQueue(self.session, self.url, self.token)
         item = {
             "release": "r1",
-            "new-status": "Running",
+            "status": "Running",
             "event-ts": "2025-01-01T00:00:00.000000Z",
         }
         q.add(item)
@@ -42,14 +42,14 @@ class TestStatusQueue(unittest.TestCase):
         q.add(
             {
                 "release": "r1",
-                "new-status": "Running",
+                "status": "Running",
                 "event-ts": "2025-01-01T00:00:00.000000Z",
             }
         )
         q.add(
             {
                 "release": "r2",
-                "new-status": "Running",
+                "status": "Running",
                 "event-ts": "2025-01-01T00:00:00.000000Z",
             }
         )
@@ -79,7 +79,7 @@ class TestStatusQueue(unittest.TestCase):
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
         q = StatusQueue(self.session, self.url, self.token)
-        q.add({"release": "r1", "new-status": "Deleted", "event-ts": now_iso})
+        q.add({"release": "r1", "status": "Deleted", "event-ts": now_iso})
 
         t = threading.Thread(target=q.process, daemon=True)
         t.start()
@@ -106,7 +106,7 @@ class TestStatusQueue(unittest.TestCase):
         q.add(
             {
                 "release": "r1",
-                "new-status": "Running",
+                "status": "Running",
                 "event-ts": "2025-01-01T00:00:00.000000Z",
             }
         )

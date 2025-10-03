@@ -53,7 +53,7 @@ class TestStatusQueueIntegration(IntegrationTestCase):
         # Craft a Deleted status with 'event-ts' ~ now
         item = {
             "release": "itest-q-deleted",
-            "new-status": "Deleted",
+            "status": "Deleted",
             "event-ts": iso_now(),
         }
         self.q.add(item)

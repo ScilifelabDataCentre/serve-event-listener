@@ -14,7 +14,7 @@ class TestStatusQueueToPostPayload(unittest.TestCase):
         """Minimal record produces payload with event-msg keys set to None."""
         rec: StatusRecord = {
             "release": "r1",
-            "new-status": "Running",
+            "status": "Running",
             "event-ts": "2025-09-26T12:00:00.000000Z",
             # no pod-msg/container-msg/app-type/app-url/curl-probe
         }
@@ -34,7 +34,7 @@ class TestStatusQueueToPostPayload(unittest.TestCase):
         """Optional fields (messages/app-type/app-url/curl-probe) are forwarded."""
         rec: StatusRecord = {
             "release": "r2",
-            "new-status": "Deleted",
+            "status": "Deleted",
             "event-ts": "2025-09-26T12:34:56.000000Z",
             "pod-msg": "pod deleted",
             "container-msg": "N/A",
@@ -65,7 +65,7 @@ class TestStatusQueueToPostPayload(unittest.TestCase):
         """_to_post_payload must not mutate the original record dict."""
         rec: StatusRecord = {
             "release": "r3",
-            "new-status": "Unknown",
+            "status": "Unknown",
             "event-ts": "2025-09-26T12:00:00.000000Z",
             "pod-msg": None,
         }
