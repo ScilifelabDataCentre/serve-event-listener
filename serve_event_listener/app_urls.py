@@ -6,6 +6,10 @@ from urllib.parse import urlunparse
 
 from serve_event_listener.el_types import StatusRecord
 
+# for non-cluster, development / testing
+_HOST_GATEWAY = "host.docker.internal"
+_PF = os.getenv("PROBE_PF")
+
 
 def _host_for(service: str, namespace: str) -> str:
     """Build host according to DNS mode env settings."""
@@ -25,6 +29,22 @@ def _port() -> str:
 
 def _scheme() -> str:
     return os.getenv("APP_URL_SCHEME", "http")
+
+
+def _pf_port_for_release(release: str) -> Optional[str]:
+    if not _PF:
+        return None
+    s = _PF.strip()
+    if s.isdigit():
+        return s
+    # parse mapping: rel:port,rel2:port2
+    for part in s.split(","):
+        if ":" in part:
+            rel, port = part.split(":", 1)
+            rel, port = rel.strip(), port.strip()
+            if rel == release and port.isdigit():
+                return port
+    return None
 
 
 def resolve_app_url(
@@ -52,6 +72,12 @@ def resolve_app_url(
     namespace = rec.get("namespace") or fallback_namespace or "default"
 
     if app_type == "shiny-proxy":
+        pf_port = _pf_port_for_release(release)
+        if pf_port:
+            # bypass proxy: talk to the port-forward on the host
+            return f"http://{_HOST_GATEWAY}:{pf_port}/app/{release}/"
+
+        # apply the normal ingress/cluster logic
         suffix = os.getenv("SHINYPROXY_SERVICE_SUFFIX", "shinyproxyapp")
         path_prefix = os.getenv("SHINYPROXY_PATH_PREFIX", "/app").rstrip("/")
         service = f"{release}-{suffix}"

@@ -50,6 +50,9 @@ export USERNAME=<admin username (Serve)>
 export PASSWORD=<admin password (Serve)>
 ```
 
+#### URL probing
+URL probing can complement the k8s event stream to detect app status. Note that during development, if running the service outside of a cluster such as using docker compose, then URL probing may require port fowarding and extra hosts defined.  
+
 To enable URL probing, set the environment variable APP_PROBE_STATUSES to the status codes for which the probing should run.
 This is currently only available for the Running and Deleted statuses.
 
@@ -65,6 +68,7 @@ export APP_PROBE_APPS=shiny,shiny-proxy
 
 There are additional environment variables with sensible defaults that control URL resolution. See app_urls.py for more information.
 
+#### Debug output
 To retrieve additional log messages during development, set:
 
 ```bash
