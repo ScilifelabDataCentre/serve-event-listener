@@ -37,12 +37,10 @@ class AppAvailabilityProbe:
         self,
         session: requests.Session,
         *,
-        verify_tls: bool = True,
         timeout: tuple[float, float] = (1.5, 3.0),
         backoff_seconds: tuple[float, ...] = (0.5, 1.0),
     ) -> None:
         self.session = session
-        self.verify_tls = verify_tls
         self.timeout = timeout
         self.backoff_seconds = backoff_seconds
 
@@ -73,7 +71,6 @@ class AppAvailabilityProbe:
             self.session,
             port80_url,
             headers=headers,
-            verify=self.verify_tls,
             timeout=self.timeout,
             backoff_seconds=self.backoff_seconds,
             allow_redirects=True,

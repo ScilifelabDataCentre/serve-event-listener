@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from serve_event_listener.app_urls import resolve_app_url
 from serve_event_listener.el_types import StatusRecord
 from serve_event_listener.http_client import get as http_get
-from serve_event_listener.http_client import make_session
+from serve_event_listener.http_client import make_session, tls_verify_from_env
 from tests.integration.base import IntegrationTestCase
 
 
@@ -77,6 +77,8 @@ class TestAppUrlResolverIntegration(IntegrationTestCase):
             url, "Resolver returned None, should return a url for shiny-proxy"
         )
 
-        session = make_session(total_retries=1)
+        verify = tls_verify_from_env()
+
+        session = make_session(total_retries=1, verify=verify)
         resp = http_get(session, url, timeout=(0.5, 1.0), backoff_seconds=(0.2,))
         self.assertIn(type(resp).__name__, ("NoneType", "Response"))

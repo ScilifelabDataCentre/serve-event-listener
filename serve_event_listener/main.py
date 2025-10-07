@@ -16,7 +16,7 @@ import sys
 from colorlog import ColoredFormatter
 
 from serve_event_listener.event_listener import EventListener
-from serve_event_listener.http_client import make_session
+from serve_event_listener.http_client import make_session, tls_verify_from_env
 from serve_event_listener.probing import AppAvailabilityProbe
 
 # Configure the logger
@@ -152,6 +152,7 @@ def _print_diagnostics(args) -> None:
     logger.info("PASSWORD: %s", _env("PASSWORD", secret=True))
     logger.info("APP_URL_DNS_MODE: %s", _env("APP_URL_DNS_MODE", default="short"))
     logger.info("APP_URL_PORT: %s", _env("APP_URL_PORT", default="80"))
+    logger.info("TLS_SSL_VERIFICATION: %s", _env("TLS_SSL_VERIFICATION", default="1"))
     logger.info("--- probing ---")
     for k, v in probe_cfg.items():
         logger.info("%s: %s", k, v)
@@ -164,12 +165,13 @@ def _run_probetest(args) -> None:
         logger.error("--mode=probetest requires --probe-url <url>")
         sys.exit(2)
 
+    verify = tls_verify_from_env()
+
     # small, fast session (no heavy retrying needed here)
-    session = make_session(total_retries=1)
+    session = make_session(total_retries=1, verify=verify)
 
     prober = AppAvailabilityProbe(
         session,
-        verify_tls=not args.probe_insecure,
         timeout=(args.probe_connect_timeout, args.probe_read_timeout),
         backoff_seconds=(0.5,),  # quick single retry if your prober uses it
     )

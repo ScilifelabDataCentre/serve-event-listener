@@ -17,7 +17,6 @@ class TestAppAvailabilityProbe(unittest.TestCase):
         self.session = MagicMock(spec=requests.Session)
         self.probe = AppAvailabilityProbe(
             self.session,
-            verify_tls=True,
             timeout=(0.2, 0.5),
             backoff_seconds=(0.05, 0.1),
         )

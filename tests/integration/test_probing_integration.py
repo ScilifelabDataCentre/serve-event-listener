@@ -3,7 +3,7 @@
 import os
 import unittest
 
-from serve_event_listener.http_client import make_session
+from serve_event_listener.http_client import make_session, tls_verify_from_env
 from serve_event_listener.probing import AppAvailabilityProbe
 from tests.integration.base import IntegrationTestCase
 
@@ -13,10 +13,10 @@ class TestAppAvailabilityProbeIntegration(IntegrationTestCase):
 
     def setUp(self):
         """Build a real Session and a probe with short timeouts."""
-        self.session = make_session(total_retries=2)
+        verify = tls_verify_from_env()
+        self.session = make_session(total_retries=2, verify=verify)
         self.probe = AppAvailabilityProbe(
             self.session,
-            verify_tls=True,
             timeout=(0.5, 1.0),
             backoff_seconds=(0.2, 0.4),
         )

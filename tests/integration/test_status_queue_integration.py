@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from serve_event_listener.event_listener import EventListener
-from serve_event_listener.http_client import make_session
+from serve_event_listener.http_client import make_session, tls_verify_from_env
 from serve_event_listener.status_queue import StatusQueue
 from tests.integration.base import IntegrationTestCase
 
@@ -22,7 +22,8 @@ class TestStatusQueueIntegration(IntegrationTestCase):
 
     def setUp(self):
         """Create shared session/token and a queue instance."""
-        self.session = make_session(total_retries=3)
+        verify = tls_verify_from_env()
+        self.session = make_session(total_retries=3, verify=verify)
         self.el = EventListener()  # reuse its fetch_token()
         self.token = self.el.fetch_token()
         # Resolve endpoint (base already validated in IntegrationTestCase)

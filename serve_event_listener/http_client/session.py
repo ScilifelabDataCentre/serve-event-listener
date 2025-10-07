@@ -1,12 +1,13 @@
 """Configure requests.Session with retries, adapters, and TLS settings."""
 
-from typing import Mapping, Optional, Tuple
+from typing import Mapping, Optional, Tuple, Union
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 Timeout = Tuple[float, float]
+VerifyType = Union[bool, str]
 
 
 def make_session(
@@ -14,6 +15,7 @@ def make_session(
     default_headers: Optional[Mapping[str, str]] = None,
     token: Optional[str] = None,
     total_retries: int = 3,
+    verify: Optional[VerifyType] = None,
 ) -> requests.Session:
     """
     Create and configure a requests.Session with retry logic and optional headers.
@@ -37,6 +39,10 @@ def make_session(
     s.headers.update({"Accept": "application/json"})
     if default_headers:
         s.headers.update(default_headers)
+
+    if verify is not None:
+        s.verify = verify
+
     if token:
         s.headers["Authorization"] = f"Token {token}"
 

@@ -2,13 +2,14 @@
 
 import logging
 import time
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any, Callable, Mapping, Optional, Tuple, Union
 
 import requests
 
 logger = logging.getLogger(__name__)
 
 Timeout = Tuple[float, float]
+VerifyType = Union[bool, str]
 
 
 def _request(
@@ -19,7 +20,7 @@ def _request(
     params: Optional[Mapping[str, Any]] = None,
     json: Optional[Mapping[str, Any]] = None,
     headers: Optional[Mapping[str, str]] = None,
-    verify: bool = True,
+    verify: Optional[VerifyType] = None,
     timeout: Timeout = (3.05, 20.0),
     backoff_seconds=(1, 2, 4),
     token_fetcher: Optional[Callable[[], str]] = None,  # optional
@@ -32,12 +33,16 @@ def _request(
     if not backoff_seconds:
         raise ValueError("backoff_seconds must contain at least one delay value")
 
-    # If token_fetcher is provided but Authorization is missing, fetch once
+    # if token_fetcher is provided but Authorization is missing, fetch once
     refreshed = False
     if token_fetcher and "Authorization" not in merged_headers:
         tok = token_fetcher()
         if tok:
             merged_headers["Authorization"] = f"{auth_scheme} {tok}"
+
+    # if verify not supplied, inherit from the Session (default True if absent)
+    if verify is None:
+        verify = getattr(session, "verify", True)
 
     try:
         last = None

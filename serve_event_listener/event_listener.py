@@ -14,6 +14,7 @@ from serve_event_listener.el_types import StatusRecord
 from serve_event_listener.http_client import get as http_get
 from serve_event_listener.http_client import make_session
 from serve_event_listener.http_client import post as http_post
+from serve_event_listener.http_client import tls_verify_from_env
 from serve_event_listener.probing import AppAvailabilityProbe
 from serve_event_listener.status_data import StatusData
 from serve_event_listener.status_queue import StatusQueue
@@ -68,9 +69,11 @@ class EventListener:
         self.resource_version: Optional[str] = None
 
         # Prepare session and settings for http get and post requests
-        self.session: requests.Session = make_session(total_retries=3)
+        self.verify_tls = tls_verify_from_env()  # True/False or cert path
+        self.session: requests.Session = make_session(
+            total_retries=3, verify=self.verify_tls
+        )
         self.token_fetcher = self.fetch_token
-        self.verify_tls: bool = False
 
         # Same settings as in http client but repeated for clarity
         self.timeout: tuple[float, float] = (3.05, 20.0)
@@ -124,7 +127,6 @@ class EventListener:
 
             self._prober = AppAvailabilityProbe(
                 self.session,
-                verify_tls=self.verify_tls,
                 timeout=self.timeout,
                 backoff_seconds=self.backoff_seconds,
             )
@@ -284,7 +286,6 @@ class EventListener:
         response = http_get(
             self.session,
             url,
-            verify=self.verify_tls,
             timeout=self.timeout,
             backoff_seconds=self.backoff_seconds,
         )
@@ -393,7 +394,6 @@ class EventListener:
             self.session,
             TOKEN_API_ENDPOINT,
             data=data,
-            verify=self.verify_tls,
             timeout=self.timeout,
             backoff_seconds=self.backoff_seconds,
             token_fetcher=None,

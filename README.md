@@ -50,6 +50,13 @@ export USERNAME=<admin username (Serve)>
 export PASSWORD=<admin password (Serve)>
 ```
 
+Modify the `TLS_SSL_VERIFICATION` environment variable if needed to disable SSL verification or point to a self-signed cert. Options are:
+```bash
+- "1"/"true"  = verify (default)
+- "0"/"false" = do not verify (dev/self-signed)
+- "/path.pem" = verify using provided CA/cert bundle
+```
+
 #### URL probing
 URL probing can complement the k8s event stream to detect app status. Note that during development, if running the service outside of a cluster such as using docker compose, then URL probing may require port fowarding and extra hosts defined.  
 

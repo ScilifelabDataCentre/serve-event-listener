@@ -24,7 +24,7 @@ ALLOWED_STATUSES = {"running", "deleted", "pending", "created", "error", "unknow
 RUNNING_PROBE_WINDOW = 180
 RUNNING_PROBE_INTERVAL = 10
 DELETED_PROBE_WINDOW = 30
-DELETED_PROBE_INTERVAL = 5
+DELETED_PROBE_INTERVAL = 10
 
 # Confirm Deleted only after N consecutive NXDOMAINs (NotFound)
 NXDOMAIN_CONFIRMATION_COUNT = int(os.getenv("APP_PROBE_NXDOMAIN_CONFIRM", "2"))
