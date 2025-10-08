@@ -2,7 +2,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Optional, Union
+from typing import Any, Mapping, Optional
 
 import requests
 import urllib3
@@ -10,9 +10,12 @@ from kubernetes import client, config, watch
 from kubernetes.client.exceptions import ApiException
 from urllib3.exceptions import HTTPError
 
+from serve_event_listener.el_types import StatusRecord
 from serve_event_listener.http_client import get as http_get
 from serve_event_listener.http_client import make_session
 from serve_event_listener.http_client import post as http_post
+from serve_event_listener.http_client import tls_verify_from_env
+from serve_event_listener.probing import AppAvailabilityProbe
 from serve_event_listener.status_data import StatusData
 from serve_event_listener.status_queue import StatusQueue
 
@@ -56,25 +59,28 @@ class EventListener:
         self.namespace = namespace
         self.label_selector = label_selector
 
-        self.setup_complete = False
-        self._status_data = StatusData()
-        self._status_queue = None
-        self.token = None
+        self.setup_complete: bool = False
+        self._status_data: StatusData = StatusData()
+        self._status_queue: Optional[StatusQueue] = None
+        self._prober: Optional[AppAvailabilityProbe] = None
+        self.token: Optional[str] = None
 
         # Track the latest resourceVersion
-        self.resource_version = None
+        self.resource_version: Optional[str] = None
 
         # Prepare session and settings for http get and post requests
-        self.session = make_session(total_retries=3)
+        self.verify_tls = tls_verify_from_env()  # True/False or cert path
+        self.session: requests.Session = make_session(
+            total_retries=3, verify=self.verify_tls
+        )
         self.token_fetcher = self.fetch_token
-        self.verify_tls = False
 
         # Same settings as in http client but repeated for clarity
-        self.timeout = (3.05, 20.0)
-        self.backoff_seconds = (1, 2, 4)
+        self.timeout: tuple[float, float] = (3.05, 20.0)
+        self.backoff_seconds: tuple[int, int, int] = (1, 2, 4)
 
     @property
-    def status_data_dict(self) -> dict:
+    def status_data_dict(self) -> Mapping[str, StatusRecord]:
         """
         Property to get the status data dictionary.
 
@@ -84,7 +90,7 @@ class EventListener:
         return self._status_data.status_data
 
     @property
-    def status_data(self) -> Any:
+    def status_data(self) -> StatusData:
         """
         Property to get the status data object.
 
@@ -92,6 +98,11 @@ class EventListener:
         - Any: The status data object.
         """
         return self._status_data
+
+    @property
+    def client_api_health_endpoint(self) -> str:
+        """A URL of the client target API for checking the status of the API is UP or DOWN"""
+        return BASE_URL + "/openapi/v1/are-you-there"
 
     def setup(self, **kwargs: Optional[Any]) -> None:
         """
@@ -114,9 +125,28 @@ class EventListener:
             self.token = self.fetch_token()
             self._status_data.set_k8s_api_client(self.client, self.namespace)
 
+            self._prober = AppAvailabilityProbe(
+                self.session,
+                timeout=self.timeout,
+                backoff_seconds=self.backoff_seconds,
+            )
+
+            try:
+                # Verify that the prober works for at least a known URL,
+                health_url = self.client_api_health_endpoint
+                _ = self._prober.probe_url(health_url)
+            except Exception as e:
+                # Otherwise disable the probing feature
+                logger.warning("Probing disabled: baseline probe failed (%s)", e)
+                self._prober = None
+
             # StatusQueue now takes a shared session instead of post function
             self._status_queue = StatusQueue(
-                self.session, APP_STATUS_API_ENDPOINT, self.token, self.fetch_token
+                self.session,
+                APP_STATUS_API_ENDPOINT,
+                self.token,
+                self.fetch_token,
+                prober=self._prober,
             )
 
             self.setup_complete = True
@@ -157,10 +187,10 @@ class EventListener:
                         self.resource_version = (
                             self.get_resource_version_from_pod_list()
                         )
+                        logger.debug(
+                            "Done getting resource version: %s", self.resource_version
+                        )
 
-                    logger.debug(
-                        "Done getting resource version: %s", self.resource_version
-                    )
                     # Stream events with resource_version
                     # Use a timeout of 4 minutes to avoid staleness
                     for event in self.watch.stream(
@@ -168,6 +198,7 @@ class EventListener:
                         namespace=self.namespace,
                         label_selector=self.label_selector,
                         resource_version=self.resource_version,
+                        # server-side timeout, will be honored because watch = True
                         timeout_seconds=240,
                     ):
                         # Update resource_version to latest
@@ -178,11 +209,10 @@ class EventListener:
                         # Update status_data_object with new event
                         self.status_data.update(event)
 
-                        # Extract the data that should be sent to API
-                        data = self.status_data.get_post_data()
+                        record: StatusRecord = self.status_data.get_status_record()
 
                         # Add to queue. Queue handles post and return codes
-                        self._status_queue.add(data)
+                        self._status_queue.add(record)
 
                 except urllib3.exceptions.ProtocolError as e:
                     logger.error(f"ProtocolError occurred: {e!r}")
@@ -249,18 +279,16 @@ class EventListener:
         Returns:
         - bool: True if the status is okay, False otherwise.
         """
-        url = BASE_URL + "/openapi/v1/are-you-there"
+        url = self.client_api_health_endpoint
         logger.debug("Verifying that the server API is up and available via %s", url)
 
         # Using the new http get function
         response = http_get(
             self.session,
             url,
-            verify=self.verify_tls,
             timeout=self.timeout,
             backoff_seconds=self.backoff_seconds,
         )
-        # response = self.get(url=BASE_URL + "/openapi/v1/are-you-there")
 
         return bool(response and response.status_code == 200)
 
@@ -274,9 +302,7 @@ class EventListener:
                 logger.debug("Loading kubeconfig from KUBECONFIG = %s", KUBECONFIG)
                 config.load_kube_config(KUBECONFIG)
             else:
-                logger.warning(
-                    "No KUBECONFIG provided - attempting to use default config"
-                )
+                logger.info("No KUBECONFIG provided - attempting to use default config")
                 config.incluster_config.load_incluster_config()
 
         except config.ConfigException as e:
@@ -305,8 +331,11 @@ class EventListener:
         """
         pods = self.client.list_namespaced_pod(
             namespace=self.namespace,
-            timeout_seconds=120,
             watch=False,
+            # client-side timeout: (connect_timeout, read_timeout)
+            _request_timeout=(10, 30),
+            # server-side timeout (may not be honored)
+            timeout_seconds=30,
         )
         resource_version = pods.metadata.resource_version
         return resource_version
@@ -321,8 +350,11 @@ class EventListener:
             api_response = self.client.list_namespaced_pod(
                 namespace=self.namespace,
                 limit=5000,
-                timeout_seconds=120,
                 watch=False,
+                # client-side timeout: (connect_timeout, read_timeout)
+                _request_timeout=(30, 60),
+                # server-side timeout (may not be honored)
+                timeout_seconds=120,
             )
 
             for pod in api_response.items:
@@ -355,14 +387,13 @@ class EventListener:
         """
         data = {"username": USERNAME, "password": PASSWORD}
 
-        # Use the shared session and your central call options.
+        # Use the shared session and the central call options.
         # NOTE: token_fetcher=None — we don't want the client to recurse to fetch a token
         # while we're already fetching one.
         response: Optional[requests.Response] = http_post(
             self.session,
             TOKEN_API_ENDPOINT,
             data=data,
-            verify=self.verify_tls,
             timeout=self.timeout,
             backoff_seconds=self.backoff_seconds,
             token_fetcher=None,
@@ -398,145 +429,3 @@ class EventListener:
 
         logger.info("Token fetched successfully")
         return token
-
-    def post(
-        self,
-        url: str = APP_STATUS_API_ENDPOINT,
-        data: dict = {},
-        headers: Union[None, dict] = None,
-    ):
-        """
-        Send a POST request to the specified URL with the provided data and token.
-
-        Args:
-            url (str): The URL to send the POST request to.
-            data (dict): The data to be included in the POST request.
-            header (None or dict): header for the request.
-
-        Returns:
-            int: The HTTP status code of the response.
-        """
-
-        # TODO: Deprecate for now. Later can be removed.
-        raise DeprecationWarning("Deprecated function. To be removed.")
-
-        logger.debug("POST called to URL %s", url)
-        try:
-            for sleep in [1, 2, 4]:
-                # Use connect timeout as 3.05s and read timeout of 20s
-                response = requests.post(
-                    url=url,
-                    json=data,
-                    headers=headers,
-                    verify=False,
-                    timeout=(3.05, 20),
-                )
-                status_code = response.status_code
-
-                if status_code == 200:
-                    logger.info("Successful POST - Returned 200 - %s", response.text)
-                    break
-
-                elif status_code == 400:
-                    logger.warning("Failed POST - Returned 400")
-                    break
-
-                elif status_code in [401, 403]:
-                    logger.warning(
-                        "Received status code %s - Fetching new token and retrying once",
-                        status_code,
-                    )
-                    self.token = self.fetch_token()
-                    self._status_queue.token = self.token
-
-                    # Retry once
-                    time.sleep(sleep)
-                    if sleep > 1:
-                        break
-
-                elif status_code in [404]:
-                    logger.warning(
-                        "Received status code %s - %s", status_code, response.text
-                    )
-                    break
-
-                elif str(status_code).startswith("5"):
-                    logger.warning("Received status code %s", status_code)
-                    logger.warning("Retrying in %s seconds", sleep)
-                    time.sleep(sleep)
-
-                else:
-                    logger.warning("Received uncaught status code: %s", status_code)
-
-            logger.info("POST returned - Status code: %s", status_code)
-
-        except requests.exceptions.ConnectTimeout as e:
-            logger.warning("Unable to POST to server. ConnectTimeout: %s", e)
-            response = None
-
-        except requests.exceptions.ReadTimeout as e:
-            logger.warning(
-                "Unable to read response from POST to server. ReadTimeout: %s", e
-            )
-            response = None
-
-        except requests.exceptions.Timeout as e:
-            logger.warning("Timeout while POST-ing to server: %s", e)
-            response = None
-
-        except requests.exceptions.ConnectionError as e:
-            logger.warning("Unable to POST to server. ConnectionError %s", e)
-            response = None
-
-        except requests.exceptions.RequestException as e:
-            logger.warning("Error during POST-ing to server. RequestException: %s", e)
-            response = None
-
-        return response
-
-    def get(self, url: str, headers: Union[None, dict] = None):
-        """
-        Send a GET request to the specified URL with the provided data and token.
-
-        Args:
-            url (str): The URL to send the GET request to.
-            data (dict): The data to be included in the POST request.
-            header (None or dict): header for the request.
-
-        Returns:
-            int: The HTTP status code of the response.
-        """
-
-        # TODO: Deprecate for now. Later can be removed.
-        raise DeprecationWarning("Deprecated function. To be removed.")
-
-        try:
-            # Use connect timeout as 3.05s and read timeout of 20s
-            response = requests.get(
-                url=url, headers=headers, verify=False, timeout=(3.05, 20)
-            )
-            logger.info("GET returned status code: %s", response.status_code)
-
-        except requests.exceptions.ConnectTimeout as e:
-            logger.warning("Unable to GET to server. ConnectTimeout: %s", e)
-            response = None
-
-        except requests.exceptions.ReadTimeout as e:
-            logger.warning(
-                "Unable to read response from GET to server. ReadTimeout: %s", e
-            )
-            response = None
-
-        except requests.exceptions.Timeout as e:
-            logger.warning("Timeout while GET-ing to server: %s", e)
-            response = None
-
-        except requests.exceptions.ConnectionError as e:
-            logger.warning("Unable to GET to server. ConnectionError %s", e)
-            response = None
-
-        except requests.exceptions.RequestException as e:
-            logger.warning("Error during GET-ing to server. RequestException: %s", e)
-            response = None
-
-        return response

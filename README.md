@@ -50,7 +50,33 @@ export USERNAME=<admin username (Serve)>
 export PASSWORD=<admin password (Serve)>
 ```
 
-To retrieve additional log messages, set:
+Modify the `TLS_SSL_VERIFICATION` environment variable if needed to disable SSL verification or point to a self-signed cert. Options are:
+```bash
+- "1"/"true"  = verify (default)
+- "0"/"false" = do not verify (dev/self-signed)
+- "/path.pem" = verify using provided CA/cert bundle
+```
+
+#### URL probing
+URL probing can complement the k8s event stream to detect app status. Note that during development, if running the service outside of a cluster such as using docker compose, then URL probing may require port fowarding and extra hosts defined.  
+
+To enable URL probing, set the environment variable APP_PROBE_STATUSES to the status codes for which the probing should run.
+This is currently only available for the Running and Deleted statuses.
+
+```bash
+export APP_PROBE_STATUSES=Running,Deleted
+```
+
+An environment variable APP_PROBE_APPS controls the app types that the URL probing controls. Currently only available for shiny and shiny-proxy (default).
+
+```bash
+export APP_PROBE_APPS=shiny,shiny-proxy
+```
+
+There are additional environment variables with sensible defaults that control URL resolution. See app_urls.py for more information.
+
+#### Debug output
+To retrieve additional log messages during development, set:
 
 ```bash
 export DEBUG=True
@@ -64,10 +90,22 @@ Navigate to the project directory and execute the following command to run the s
 python3 -m serve_event_listener.main --namespace <some-namespace> --label-selector <some label selector>
 ```
 
-### Running the unit tests
+### Running the service in other modes
 
+The program can also be run at the command line in two other modes, diagnostics and probetest.
+
+diagnostics: The dignostics mode simply prints the effective settings and exits
 ```bash
-python -m unittest discover -s tests
+python3 -m serve_event_listener.main --mode diagnostics
+```
+
+probetest: The probe test mode performs a single-shot URL probing test against a specified URL.
+
+Arguments:
+- Required argument: --probe-url
+- Optional arguments: --probe-insecure, --probe-connect-timeout, --probe-read-timeout
+```bash
+python3 -m serve_event_listener.main --mode probetest --probe-url <url-to-probe>
 ```
 
 ## Docker Container Setup
@@ -98,3 +136,41 @@ The following are the main function arguments that can be passed to run the prog
 
 - `--namespace`: Kubernetes namespace to watch (default: `default`).
 - `--label-selector`: Label selector for filtering pods (default: `type=app`).
+
+## Testing
+
+This project contains both unit tests and integration tests.
+
+### Running the unit tests
+
+```bash
+python -m unittest discover -s tests/unit/
+```
+
+### Running the integration tests
+
+To run the integration tests, the variable RUN_INTEGRATION_TESTS must be set to 1.
+
+1. Start the target service (as defined by BASE_URL). Ensure that KUBECONFIG is set or can be resolved.
+
+2. Then run the integration tests:
+```bash
+RUN_INTEGRATION_TESTS=1 python -m unittest discover -v -s tests/integration/
+```
+
+If you have an existing app available for testing in your target k8s environment, then you can use it to run additional tests using env var PROBE_RELEASE, like so:
+
+```bash
+RUN_INTEGRATION_TESTS=1 PROBE_RELEASE=<app-release> NAMESPACE_UNDER_TEST=default python -m unittest discover -v -s tests/integration/
+```
+
+### Pytest
+
+If you instead prefer to use Pytest for nicer output etc:
+
+```bash
+pip install pytest
+pytest tests/unit -v
+RUN_INTEGRATION_TESTS=1 pytest tests/integration -v
+RUN_INTEGRATION_TESTS=1 PROBE_RELEASE=<app-release> pytest tests/integration -v
+```

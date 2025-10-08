@@ -1,11 +1,16 @@
+"""Logic to process k8s event information into app status."""
+
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 from kubernetes.client.models import V1PodStatus
+
+from serve_event_listener.app_urls import resolve_app_url
+from serve_event_listener.el_types import AppType, StatusRecord
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +30,49 @@ K8S_STATUS_MAP = {
 }
 
 
+def _detect_app_type(pod: Optional[object]) -> Optional[AppType]:
+    """Best-effort app-type detection from a k8s Pod-like object.
+
+    Accepts None to match upstream callers.
+    Returns None when the shape is incomplete or labels are missing.
+    """
+    if pod is None:
+        return None
+
+    labels = getattr(pod.metadata, "labels", None) or {}
+    ann = getattr(pod.metadata, "annotations", None) or {}
+    values = " ".join(
+        str(v).lower() for v in list(labels.values()) + list(ann.values())
+    )
+    if "shinyproxy" in values or "shiny-proxy" in values:
+        return "shiny-proxy"
+    if "shiny" in values:
+        return "shiny"
+    # images fallback
+    containers = getattr(getattr(pod, "spec", None), "containers", None) or []
+    images = " ".join(str(getattr(c, "image", "")).lower() for c in containers)
+    if "shinyproxy" in images:
+        return "shiny-proxy"
+    if "rocker/shiny" in images or ":shiny" in images or "rstudio" in images:
+        return "shiny"
+    return None
+
+
 class StatusData:
-    def __init__(self):
+    """StatusData represents event and status information about a k8s app."""
+
+    def __init__(self, namespace: str = "default"):
+        # TODO: In the future, we will also refactor status_data to
+        # instead hold an Internal store: release -> StatusRecord
+        # self._by_release: Dict[str, StatusRecord] = {}
+        # Track which release was last updated (used by get_status_record())
+        # self._last_release: Optional[str] = None
+
+        # But for now we continue to use the current dict status_data:
         self.status_data = {}
+
         self.k8s_api_client = None
-        self.namespace = "default"
+        self.namespace: str = namespace
 
     @staticmethod
     def determine_status_from_k8s(
@@ -52,7 +95,8 @@ class StatusData:
         - Tuple[str, str, str]: The status of the pod, container message, pod message
         """
         empty_message = ""
-        pod_message = status_object.message if status_object.message else empty_message
+        pod_message = getattr(status_object, "message", None) or empty_message
+        # pod_message = status_object.message if status_object.message else empty_message
 
         def process_container_statuses(container_statuses, init_containers=False):
             for container_status in container_statuses:
@@ -95,8 +139,12 @@ class StatusData:
             else:
                 return None
 
-        init_container_statuses = status_object.init_container_statuses
-        container_statuses = status_object.container_statuses
+        init_container_statuses = (
+            getattr(status_object, "init_container_statuses", []) or []
+        )
+        container_statuses = getattr(status_object, "container_statuses", []) or []
+        # init_container_statuses = status_object.init_container_statuses
+        # container_statuses = status_object.container_statuses
 
         if init_container_statuses is not None:
             result = process_container_statuses(
@@ -160,8 +208,11 @@ class StatusData:
             # label_selector=f"app={deployment_name}",
             label_selector=f"app={release}",
             limit=response_limit,
-            timeout_seconds=120,
             watch=False,
+            # client-side timeout: (connect_timeout, read_timeout)
+            _request_timeout=(10, 30),
+            # server-side timeout (may not be honored)
+            timeout_seconds=30,
         )
 
         phases = []
@@ -195,7 +246,13 @@ class StatusData:
 
         try:
             api_response = self.k8s_api_client.list_namespaced_pod(
-                self.namespace, limit=response_limit, timeout_seconds=120, watch=False
+                self.namespace,
+                limit=response_limit,
+                watch=False,
+                # client-side timeout: (connect_timeout, read_timeout)
+                _request_timeout=(10, 30),
+                # server-side timeout (may not be honored)
+                timeout_seconds=30,
             )
 
             for pod in api_response.items:
@@ -272,39 +329,31 @@ class StatusData:
                 deletion_timestamp,
             )
 
+            app_type = _detect_app_type(pod)
+            self.status_data[release]["app-type"] = app_type
+            logger.info("Detected this pod's app type to be = %s", app_type)
+
+            if app_type:
+                # Only set app-url if we can resolve it
+                rec = self.get_status_record()
+                url = resolve_app_url(rec, fallback_namespace=self.namespace)
+                if url:
+                    self.status_data[release]["app-url"] = url
+
             self.status_data[release]["pod-msg"] = pod_message
             self.status_data[release]["container-msg"] = container_message
 
-    def get_post_data(self) -> dict:
-        """
-        The Serve API app-statuses expects a json on this form:
-        {
-            “token“: <token>,
-            “new-status“: <new status>,
-            “event-msg“: {“pod-msg“: <msg>, “container-msg“: <msg>},
-            “event-ts“: <event timestamp>
-        }
-
-        Parameters:
-        - status_data (dict): status_data dict from stream.
-
-        Returns:
-        - str: post data on the form explained above
-        """
+    def get_status_record(self) -> StatusRecord:
+        """Return the latest per-release StatusRecord to enqueue."""
         release = self.get_latest_release()
-        data = self.status_data[release]
 
-        post_data = {
-            "release": release,
-            "new-status": data.get("status", None),
-            "event-ts": data.get("event-ts", None),
-            "event-msg": {
-                "pod-msg": data.get("pod-msg", None),
-                "container-msg": data.get("container-msg", None),
-            },
-        }
-        logger.debug("Converting to POST data")
-        return post_data
+        # Note: to refactor to "get by release" here in the future, we would instead
+        # implement a _by_release function and use it here
+        # and alos move setting the release attribute into update()
+        # rec = self._by_release[release]
+        self.status_data[release]["release"] = release
+
+        return self.status_data[release]
 
     def update_or_create_status(
         self,

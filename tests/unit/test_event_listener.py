@@ -160,7 +160,7 @@ class TestEventListener(unittest.TestCase):
         self.el.setup_complete = True
         self.el._status_queue = MagicMock()
         self.el._status_data = MagicMock()
-        self.el._status_data.get_post_data.return_value = {"p": 1}
+        self.el._status_data.get_status_record.return_value = {"p": 1}
         self.el.client = MagicMock()
         self.el.client.list_namespaced_pod.return_value = SimpleNamespace(
             metadata=SimpleNamespace(resource_version="rv0")
