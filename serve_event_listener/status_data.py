@@ -30,7 +30,15 @@ K8S_STATUS_MAP = {
 }
 
 
-def _detect_app_type(pod) -> Optional[AppType]:
+def _detect_app_type(pod: Optional[object]) -> Optional[AppType]:
+    """Best-effort app-type detection from a k8s Pod-like object.
+
+    Accepts None to match upstream callers.
+    Returns None when the shape is incomplete or labels are missing.
+    """
+    if pod is None:
+        return None
+
     labels = getattr(pod.metadata, "labels", None) or {}
     ann = getattr(pod.metadata, "annotations", None) or {}
     values = " ".join(

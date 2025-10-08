@@ -67,7 +67,8 @@ def parse_args():
         "--mode",
         choices=["normal", "diagnostics", "probetest"],
         default="normal",
-        help="run mode (default: normal)",
+        help="run mode (default: normal). diagnostics prints out configuration info and exists. \
+              probetest runs a probe against a specified URL.",
     )
     parser.add_argument(
         "--probe-url",

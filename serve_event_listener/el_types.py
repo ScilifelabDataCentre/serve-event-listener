@@ -5,13 +5,13 @@ from typing import Any, Literal, Mapping, NotRequired, Optional, TypedDict
 # Canonical status/app types
 Status = Literal["Running", "Pending", "Deleted", "Failed", "Unknown", "Succeeded"]
 AppType = Literal["shiny", "shiny-proxy"]
-ProbeClass = Literal["Running", "Unknown", "NotFound"]
+ProbeStatus = Literal["Running", "Unknown", "NotFound"]
 
 # Result block produced by the AppAvailabilityProbe (optional on payload)
-ProbeBlock = TypedDict(
-    "ProbeBlock",
+ProbeBlockDict = TypedDict(
+    "ProbeBlockDict",
     {
-        "status": ProbeClass,  # e.g., "Running" | "Unknown" | "NotFound"
+        "status": ProbeStatus,  # e.g., "Running" | "Unknown" | "NotFound"
         "port80_status": Optional[int],  # HTTP status code (if any)
         "note": str,  # short diagnostic
         "url": str,  # probed URL
@@ -34,7 +34,7 @@ StatusRecord = TypedDict(
         "message": NotRequired[str],
         "app-type": NotRequired[AppType],
         "app-url": NotRequired[str],
-        "curl-probe": NotRequired[ProbeBlock],
+        "curl-probe": NotRequired[ProbeBlockDict],
     },
     total=False,
 )

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from serve_event_listener.el_types import ProbeStatus
 from serve_event_listener.http_client import get as http_get
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ProbeResult:
     """Outcome of an availability probe."""
 
-    status: str  # "Running" | "Unknown" | "NotFound"
+    status: ProbeStatus  # "Running" | "Unknown" | "NotFound"
     port80_status: Optional[int] = None
     note: str = ""  # short diagnostic
 

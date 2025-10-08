@@ -100,7 +100,7 @@ class EventListener:
         return self._status_data
 
     @property
-    def client_api_ping_endpoint(self) -> str:
+    def client_api_health_endpoint(self) -> str:
         """A URL of the client target API for checking the status of the API is UP or DOWN"""
         return BASE_URL + "/openapi/v1/are-you-there"
 
@@ -133,8 +133,8 @@ class EventListener:
 
             try:
                 # Verify that the prober works for at least a known URL,
-                test_url = self.client_api_ping_endpoint
-                _ = self._prober.probe_url(test_url)
+                health_url = self.client_api_health_endpoint
+                _ = self._prober.probe_url(health_url)
             except Exception as e:
                 # Otherwise disable the probing feature
                 logger.warning("Probing disabled: baseline probe failed (%s)", e)
@@ -279,7 +279,7 @@ class EventListener:
         Returns:
         - bool: True if the status is okay, False otherwise.
         """
-        url = self.client_api_ping_endpoint
+        url = self.client_api_health_endpoint
         logger.debug("Verifying that the server API is up and available via %s", url)
 
         # Using the new http get function

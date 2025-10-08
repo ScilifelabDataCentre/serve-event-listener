@@ -72,7 +72,7 @@ class TestStatusDataUrlAttachmentIntegration(IntegrationTestCase):
                 f"No shiny-proxy pod with a 'release' label found in namespace {namespace}"
             )
 
-        print("/nFound a shiny pod: ", pod.metadata.name)
+        print("\nFound a shiny pod: ", pod.metadata.name)
         sd = StatusData(namespace=namespace)
         # Simulate a k8s watch event shape
         t0 = time.time()
