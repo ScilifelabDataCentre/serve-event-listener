@@ -164,7 +164,7 @@ class StatusQueue:
             self._rollout_block_until = {}  # release -> epoch (float)
 
         PERIOD = PROCESS_TICK_SECONDS
-        guard_seconds = globals().get("ROLLOUT_GUARD_SECONDS", 15.0)
+        guard_seconds = globals().get("ROLLOUT_GUARD_SECONDS", 30.0)
 
         next_tick = time.monotonic()
         while not self.stop_event.is_set():
@@ -199,6 +199,10 @@ class StatusQueue:
                     block_until = self._rollout_block_until.get(release)
                     if block_until and now < block_until:
                         # inside guard: defer; optionally probe to see if it flipped back to Running
+                        logger.debug(
+                            "Release %s guarded by rollout block, rejecting preliminary status deleted",
+                            release,
+                        )
                         if (
                             self.prober
                             and self._probe_enabled_for(rec)
@@ -231,11 +235,11 @@ class StatusQueue:
                         # (no-op here, because we're still inside guard)
                         continue
                     else:
-                        # guard expired → clean out any stale entry
+                        # guard expired, clean out any stale entry
                         if block_until and now >= block_until:
                             self._rollout_block_until.pop(release, None)
 
-                # probing path (gated)
+                # ---- Probing path ----
                 if status_lc in {"running", "deleted"} and self._probe_enabled_for(rec):
 
                     logger.info(
@@ -245,7 +249,7 @@ class StatusQueue:
                     )
 
                     deadline_epoch = self._ensure_deadline(rec, status_lc)
-                    if deadline_epoch is not None and time.time() < deadline_epoch:
+                    if deadline_epoch is not None and now < deadline_epoch:
                         # still inside the probe window
                         if self._allow_probe_now(rec):
                             # try a probe attempt

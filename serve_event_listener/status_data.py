@@ -335,7 +335,7 @@ class StatusData:
             # As we are not ready to introduce a new status Terminating, we will only log it for now
             is_terminating = is_pod_terminating(pod)
             logger.info(
-                "Is release %s identified as Termianting? %s", release, is_terminating
+                "Is release %s identified as Terminating? %s", release, is_terminating
             )
 
             status_object = pod.status

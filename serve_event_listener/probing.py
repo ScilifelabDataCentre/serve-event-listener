@@ -59,7 +59,7 @@ class AppAvailabilityProbe:
         """Probe a single HTTP URL and classify availability."""
         # NotFound — DNS cannot resolve
         if not self._dns_resolves(port80_url):
-            logger.info(
+            logger.debug(
                 "Skipping URL probing because DNS resolution failed for url %s",
                 port80_url,
             )
