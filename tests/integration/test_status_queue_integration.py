@@ -3,18 +3,13 @@
 import os
 import threading
 import time
-from datetime import datetime, timezone
 from unittest.mock import patch
 
 from serve_event_listener.event_listener import EventListener
 from serve_event_listener.http_client import make_session, tls_verify_from_env
 from serve_event_listener.status_queue import StatusQueue
 from tests.integration.base import IntegrationTestCase
-
-
-def iso_now() -> str:
-    """Return current UTC time as RFC3339/ISO string with Z suffix."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+from tests.integration.utils import iso_now
 
 
 class TestStatusQueueIntegration(IntegrationTestCase):

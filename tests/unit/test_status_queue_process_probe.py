@@ -20,9 +20,13 @@ def iso_now(offset_sec: float = 0.0) -> str:
     )
 
 
+def iso_at(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
 class TestStatusQueueProcessProbe(unittest.TestCase):
     def setUp(self):
-        # Patch module-level config so tests are deterministic
+        # patch module-level config so tests are deterministic
         self.orig_tick = sq_mod.PROCESS_TICK_SECONDS
         self.orig_statuses = set(sq_mod.APP_PROBE_STATUSES)
         self.orig_apps = set(sq_mod.APP_PROBE_APPS)
@@ -263,3 +267,89 @@ def test_post_404_object_not_found_logged_as_debug(mock_logger, mock_post):
         assert "POST failed" not in warn_msgs
     finally:
         sq_mod.APP_PROBE_STATUSES = orig_statuses
+
+
+# Uncomment this decorator temporarily if need CI to pass
+# @unittest.expectedFailure
+class TestStatusQueueRolloutGuard(unittest.TestCase):
+    def setUp(self):
+        # enable probing for both statuses
+        self._orig_statuses = set(sq_mod.APP_PROBE_STATUSES)
+        self._orig_apps = set(sq_mod.APP_PROBE_APPS)
+        sq_mod.APP_PROBE_STATUSES = {"running", "deleted"}
+        sq_mod.APP_PROBE_APPS = {"shiny", "shiny-proxy"}
+
+        # speed up: stub out sleep inside the worker
+        self.sleep_patcher = patch(
+            "serve_event_listener.status_queue.time.sleep", return_value=None
+        )
+        self.sleep_patcher.start()
+
+        # minimal queue wiring
+        self.session = MagicMock(spec=requests.Session)
+        self.url = "https://api.example/app-status/"
+        self.token = "T0"
+
+    def tearDown(self):
+        self.sleep_patcher.stop()
+        sq_mod.APP_PROBE_STATUSES = self._orig_statuses
+        sq_mod.APP_PROBE_APPS = self._orig_apps
+
+    @patch("serve_event_listener.status_queue.http_post")
+    @patch.object(
+        sq_mod, "NXDOMAIN_CONFIRMATION_COUNT", 1
+    )  # new=1 -> no extra arg injected
+    def test_rollout_should_not_post_deleted_during_guard_window(self, mock_post):
+        """
+        Desired behavior: During a rollout (Running then Deleted for same release),
+        the queue should NOT finalize Deleted quickly (guard window).
+        This will FAIL before the rollout guard is implemented; PASS after.
+        """
+        prober = MagicMock()
+        prober.probe_url.return_value = SimpleNamespace(
+            status="NotFound",
+            port80_status=None,
+            note="simulated",
+            url="http://r1-app/",
+        )
+
+        q = StatusQueue(self.session, self.url, self.token, prober=prober)
+
+        base = datetime.now(timezone.utc)
+        t_run = iso_at(base)
+        t_del = iso_at(base + timedelta(seconds=1))
+
+        q.add(
+            {
+                "release": "r1",
+                "status": "Running",
+                "event-ts": t_run,
+                "app-type": "shiny",
+                "app-url": "http://r1-app/",
+            }
+        )
+        q.add(
+            {
+                "release": "r1",
+                "status": "Deleted",
+                "event-ts": t_del,
+                "app-type": "shiny",
+                "app-url": "http://r1-app/",
+            }
+        )
+
+        t = threading.Thread(target=q.process, daemon=True)
+        t.start()
+        time.sleep(0.25)
+        q.stop_processing()
+        t.join(timeout=1)
+
+        deleted_posts = [
+            kwargs.get("data", {}).get("new-status")
+            for _, kwargs in mock_post.call_args_list
+        ]
+        self.assertNotIn(
+            "Deleted",
+            deleted_posts,
+            "Should not post Deleted during rollout guard window",
+        )

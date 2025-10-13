@@ -125,6 +125,7 @@ def _print_diagnostics(args) -> None:
             "NXDOMAIN_CONFIRMATION_COUNT": getattr(
                 sq, "NXDOMAIN_CONFIRMATION_COUNT", "<n/a>"
             ),
+            "ROLLOUT_GUARD_SECONDS": getattr(sq, "ROLLOUT_GUARD_SECONDS", "<n/a>"),
         }
     except Exception:
         probe_cfg = {
@@ -135,6 +136,7 @@ def _print_diagnostics(args) -> None:
             "DELETED_PROBE_WINDOW": "<unavailable>",
             "DELETED_PROBE_INTERVAL": "<unavailable>",
             "NXDOMAIN_CONFIRMATION_COUNT": "<unavailable>",
+            "ROLLOUT_GUARD_SECONDS": "<unavailable>",
         }
 
     logger.info("\n===== diagnostics =====")

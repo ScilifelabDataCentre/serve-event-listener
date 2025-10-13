@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple, Union
 
 from kubernetes import client
+from kubernetes.client import V1Pod
 from kubernetes.client.exceptions import ApiException
 from kubernetes.client.models import V1PodStatus
 
@@ -56,6 +57,29 @@ def _detect_app_type(pod: Optional[object]) -> Optional[AppType]:
     if "rocker/shiny" in images or ":shiny" in images or "rstudio" in images:
         return "shiny"
     return None
+
+
+def is_pod_terminating(pod: V1Pod) -> bool:
+    # 1) canonical: deletionTimestamp means the pod is terminating
+    # if getattr(getattr(pod, "metadata", None), "deletion_timestamp", None):
+    #    return True
+
+    # 2) friendly signal: Ready=False because the pod is being deleted
+    conds = getattr(getattr(pod, "status", None), "conditions", None) or []
+    for c in conds:
+        if getattr(c, "type", "") == "Ready" and getattr(c, "status", "") == "False":
+            if getattr(c, "reason", "") == "PodDeleting":
+                return True
+
+    # 3) containers are terminating (optional heuristic)
+    cstats = getattr(getattr(pod, "status", None), "container_statuses", None) or []
+    for cs in cstats:
+        st = getattr(cs, "state", None)
+        term = getattr(st, "terminated", None) if st else None
+        if term is not None:
+            return True
+
+    return False
 
 
 class StatusData:
@@ -198,7 +222,8 @@ class StatusData:
         If no pod matches the release, then returns empty list.
         """
         logger.debug(
-            f"Getting the nr of pods in release {release} directly from k8s via the api client"
+            "Getting the nr of pods in release %s directly from k8s via the api client",
+            release,
         )
 
         # Using label_selector with app=release because no pods were selected using the
@@ -303,7 +328,14 @@ class StatusData:
             release = pod.metadata.labels.get("release")
 
             logger.info(
-                f"--- Event triggered update status data from release {release}"
+                "--- Event triggered update status data from release %s", release
+            )
+
+            # Consider using a is_pod_terminating() method to determine a custom status Terminating
+            # As we are not ready to introduce a new status Terminating, we will only log it for now
+            is_terminating = is_pod_terminating(pod)
+            logger.info(
+                "Is release %s identified as Terminating? %s", release, is_terminating
             )
 
             status_object = pod.status

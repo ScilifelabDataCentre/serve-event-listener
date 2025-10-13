@@ -5,11 +5,12 @@ import time
 import unittest
 from unittest.mock import patch
 
-from kubernetes import client, config
+from kubernetes import client
 
 from serve_event_listener.el_types import StatusRecord
 from serve_event_listener.status_data import StatusData
 from tests.integration.base import IntegrationTestCase
+from tests.integration.utils import kube_load_config
 
 
 class TestStatusDataUrlAttachmentIntegration(IntegrationTestCase):
@@ -19,19 +20,7 @@ class TestStatusDataUrlAttachmentIntegration(IntegrationTestCase):
     def setUpClass(cls):
         super().setUpClass()  # ensures RUN_INTEGRATION_TESTS gate is applied
 
-        # Try to load cluster config; skip if not available
-        kubeconfig = os.getenv("KUBECONFIG")
-        print(f"Attempting to use KUBECONFIG = {kubeconfig}")
-        try:
-            if kubeconfig and os.path.exists(kubeconfig):
-                config.load_kube_config(kubeconfig)
-            else:
-                # try in-cluster; skip if not applicable
-                config.incluster_config.load_incluster_config()
-        except Exception:
-            raise unittest.SkipTest(
-                "No K8s config available for StatusData integration"
-            )
+        _ = kube_load_config()
 
     def _find_shinyproxy_pod(self, namespace: str):
         v1 = client.CoreV1Api()

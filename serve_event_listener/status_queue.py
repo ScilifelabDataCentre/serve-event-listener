@@ -31,6 +31,10 @@ NXDOMAIN_CONFIRMATION_COUNT = int(os.getenv("APP_PROBE_NXDOMAIN_CONFIRM", "2"))
 
 PROCESS_TICK_SECONDS = 2.0
 
+# how long to defer 'Deleted' after we recently saw 'Running' for the same release
+# seconds to tolerate a swap of pods in a release
+ROLLOUT_GUARD_SECONDS = float(os.getenv("ROLLOUT_GUARD_SECONDS", "60"))
+
 
 def _parse_csv_env(name: str) -> set[str]:
     raw = os.getenv(name, "") or ""
@@ -45,6 +49,20 @@ APP_PROBE_APPS = {
     s.strip().lower()
     for s in (os.getenv("APP_PROBE_APPS", "shiny,shiny-proxy")).split(",")
 }
+
+
+def _ts(iso: str | None) -> float:
+    if not iso:
+        return 0.0
+
+    try:
+        return (
+            datetime.strptime(iso, "%Y-%m-%dT%H:%M:%S.%fZ")
+            .replace(tzinfo=timezone.utc)
+            .timestamp()
+        )
+    except Exception:
+        return 0.0
 
 
 class StatusQueue:
@@ -82,7 +100,7 @@ class StatusQueue:
         Raises:
             ValueError: If `url` is not absolute or `token` is empty.
         """
-        # Minimal runtime validation (nice for early misconfig)
+        # minimal runtime validation (nice for early misconfig)
         if not token:
             raise ValueError("token must be non-empty")
         parsed = urlparse(url)
@@ -95,8 +113,15 @@ class StatusQueue:
         self.token_fetcher = token_fetcher
         self.prober = prober
 
-        self.queue = Queue[StatusRecord]()  # queue of StatusRecord items
+        # queue of StatusRecord items
+        self.queue = Queue[StatusRecord]()
         self.stop_event = threading.Event()
+
+        # data structures to capture attributes per release needed to handle rollout swaps
+        # stores the last Running event (epoch)
+        self._last_seen_running_ts: dict[str, float] = {}
+        # do not finalize Deleted before this epoch
+        self._rollout_block_until: dict[str, float] = {}
 
     def add(self, record: StatusRecord) -> None:
         """Enqueue a StatusRecord."""
@@ -106,6 +131,15 @@ class StatusQueue:
             record.get("release"),
             self.queue.qsize() + 1,
         )
+        # special attributes for handling rollout swaps
+        evt_ts = _ts(record.get("event-ts"))
+        status_lc = (record.get("status") or "").lower()
+        if status_lc == "running":
+            # remember latest running event
+            if evt_ts > (
+                self._last_seen_running_ts.get(record.get("release", ""), 0.0)
+            ):
+                self._last_seen_running_ts[record["release"]] = evt_ts
 
     def process(self) -> None:
         """Process the queue in a loop until stop event is set.
@@ -116,11 +150,21 @@ class StatusQueue:
           - Deleted (shiny/shiny-proxy): require NXDOMAIN NotFound N times within
             DELETED_PROBE_WINDOW/INTERVAL, then confirm 'Deleted'.
           - If probing is disabled for 'deleted', keep legacy <30s requeue grace.
+          - Rollout guard — after we see 'Running' for a release, we defer any 'Deleted'
+            for the same release for a short window to avoid posting spurious deletions
+            during pod swaps.
         """
-        # Track logging of empty queue
+        # track logging of empty queue
         q_empty_log = 0
 
+        # lazy create tracking maps; keep them small by popping on completion/expiry
+        if not hasattr(self, "_last_seen_running_ts"):
+            self._last_seen_running_ts = {}  # release -> epoch (float)
+        if not hasattr(self, "_rollout_block_until"):
+            self._rollout_block_until = {}  # release -> epoch (float)
+
         PERIOD = PROCESS_TICK_SECONDS
+        guard_seconds = globals().get("ROLLOUT_GUARD_SECONDS", 30.0)
 
         next_tick = time.monotonic()
         while not self.stop_event.is_set():
@@ -137,11 +181,65 @@ class StatusQueue:
 
                 release = rec.get("release")
                 status_lc = (rec.get("status") or "").lower()
+                now = time.time()
 
                 # default action: proceed to POST (may be flipped to requeue)
                 requeue = False
 
-                # probing path (gated)
+                # ---- ROLLOUT GUARD: track Running and block Deleted briefly ----
+                if status_lc == "running":
+                    # seeing Running again extends/refreshes the guard
+                    self._last_seen_running_ts[release] = now
+                    self._rollout_block_until[release] = now + float(guard_seconds)
+                    # reset any NXDOMAIN counters from earlier Deleted probes
+                    rec.pop("_nx_consec", None)
+
+                elif status_lc == "deleted":
+                    # if we've seen Running very recently for this release, defer 'Deleted'
+                    block_until = self._rollout_block_until.get(release)
+                    if block_until and now < block_until:
+                        # inside guard: defer; optionally probe to see if it flipped back to Running
+                        logger.debug(
+                            "Release %s guarded by rollout block, rejecting preliminary status deleted",
+                            release,
+                        )
+                        if (
+                            self.prober
+                            and self._probe_enabled_for(rec)
+                            and self._allow_probe_now(rec)
+                        ):
+                            app_url = rec.get("app-url")
+                            pr = self.prober.probe_url(app_url)  # type: ignore[arg-type]
+                            rec["curl-probe"] = {
+                                "status": pr.status,
+                                "port80_status": pr.port80_status,
+                                "note": pr.note,
+                                "url": app_url,
+                            }
+                            # if probe says Running, convert this record to Running and refresh guard
+                            if pr.status == "Running":
+                                rec["status"] = "Running"
+                                status_lc = "running"
+                                self._last_seen_running_ts[release] = now
+                                self._rollout_block_until[release] = now + float(
+                                    guard_seconds
+                                )
+                                rec.pop("_nx_consec", None)
+                        # always requeue during guard; throttle next attempt
+                        requeue = True
+                        self._schedule_next_probe(rec, "deleted")
+                        self.queue.task_done()
+                        self.queue.put(rec)
+                        time.sleep(0.01)
+                        # prevent unbounded growth: drop expired blocks opportunistically
+                        # (no-op here, because we're still inside guard)
+                        continue
+                    else:
+                        # guard expired, clean out any stale entry
+                        if block_until and now >= block_until:
+                            self._rollout_block_until.pop(release, None)
+
+                # ---- Probing path ----
                 if status_lc in {"running", "deleted"} and self._probe_enabled_for(rec):
 
                     logger.info(
@@ -151,7 +249,7 @@ class StatusQueue:
                     )
 
                     deadline_epoch = self._ensure_deadline(rec, status_lc)
-                    if deadline_epoch is not None and time.time() < deadline_epoch:
+                    if deadline_epoch is not None and now < deadline_epoch:
                         # still inside the probe window
                         if self._allow_probe_now(rec):
                             # try a probe attempt
@@ -163,13 +261,20 @@ class StatusQueue:
                                 "note": pr.note,
                                 "url": app_url,
                             }
+                            logger.debug(
+                                "Probing completed. Returned status=%s, port80_status=%s, note=%s",
+                                pr.status,
+                                pr.port80_status,
+                                pr.note,
+                            )
 
                             if status_lc == "running":
                                 # confirm only on probe Running; otherwise keep probing
                                 if pr.status != "Running":
                                     requeue = True
                                     self._schedule_next_probe(rec, status_lc)
-                            else:  # deleted
+
+                            elif status_lc == "deleted":
                                 # Deleted only confirms on NXDOMAIN NotFound; require N consecutive
                                 if pr.status == "NotFound":
                                     nx = int(rec.get("_nx_consec", 0)) + 1
@@ -183,6 +288,11 @@ class StatusQueue:
                                         rec["_nx_consec"] = 0
                                     requeue = True
                                     self._schedule_next_probe(rec, status_lc)
+                            else:  # not running or deleted
+                                logger.warning(
+                                    "The status in the probing logic must be running or deleted but is %s",
+                                    status_lc,
+                                )
                         else:
                             # not time yet; requeue to avoid blocking
                             requeue = True
@@ -203,9 +313,14 @@ class StatusQueue:
                     self.queue.put(rec)
                     # yield briefly; actual delay is handled by the next-epoch throttle
                     time.sleep(0.01)
+                    # defensive cleanup: drop expired guard entries so the dict can't grow unbounded
+                    # (cheap O(1) check per loop)
+                    ru = self._rollout_block_until.get(release)
+                    if ru and time.time() >= ru:
+                        self._rollout_block_until.pop(release, None)
                     continue
 
-                # build payload and POST
+                # ---------- build payload and POST ----------
                 if not rec.get("status"):
                     logger.error(
                         "record missing status before POST; release=%s keys=%s",
@@ -249,6 +364,18 @@ class StatusQueue:
                         )
                 else:
                     logger.debug("POST ok: %s (%s)", resp.status_code, release)
+
+                # -------- cleanup: prevent tracking dicts from growing --------
+                # if we posted a terminal/non-running state or guard expired, drop entries.
+                if status_lc != "running":
+                    self._last_seen_running_ts.pop(release, None)
+                # if posted Deleted or done with this release, drop guard if expired or not useful
+                ru = self._rollout_block_until.get(release)
+                if ru and time.time() >= ru:
+                    self._rollout_block_until.pop(release, None)
+                # also drop guard after posting Deleted
+                if status_lc == "deleted":
+                    self._rollout_block_until.pop(release, None)
 
                 logger.debug(
                     "Processed queue successfully of release %s, new status=%s",
