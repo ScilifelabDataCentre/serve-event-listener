@@ -344,11 +344,9 @@ class StatusData:
                 StatusData.determine_status_from_k8s(status_object)
             )
 
-            logger.debug(
-                f"Pod status converted to AppStatus={status}, \
+            logger.debug(f"Pod status converted to AppStatus={status}, \
                          ContMessage:{container_message}, \
-                         PodMessage:{pod_message}"
-            )
+                         PodMessage:{pod_message}")
 
             creation_timestamp = pod.metadata.creation_timestamp
             deletion_timestamp = pod.metadata.deletion_timestamp
